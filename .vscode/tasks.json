@@ -1,0 +1,50 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Next.js app",
+			"type": "shell",
+			"command": "npm run dev",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build Next.js project",
+			"type": "shell",
+			"command": "npm run build",
+			"args": [],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Netlify deploy prod",
+			"type": "shell",
+			"command": "netlify deploy --prod --build",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "git-stage-commit-push-auth-fixes",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"app/auth/page.tsx",
+				"app/api/auth/forgot/route.ts",
+				"app/api/auth/reset/route.ts",
+				"app/auth/forgot/page.tsx"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

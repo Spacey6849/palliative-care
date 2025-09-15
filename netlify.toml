@@ -1,0 +1,32 @@
+# Netlify build configuration for Next.js
+# Docs: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NODE_ENV = "production"
+  NPM_FLAGS = "--force"
+  # Re-enable secrets scanning (deploy confirmed)
+  SECRETS_SCAN_ENABLED = "true"
+  # Do not omit any paths from secrets scanning
+  SECRETS_SCAN_OMIT_PATHS = ""
+  # Omit known non-secrets or false-positive keys to prevent build failures
+  # NEXT_PUBLIC_* variables are intentionally public at build time.
+  # SMTP_HOST is a hostname (not a secret) but gets flagged when it appears in vendor bundles.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_SUPABASE_URL,SMTP_HOST"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Secrets scanning configuration
+# Avoid scanning large generated bundles that may include base64-like strings or third-party code
+[secrets]
+  enabled = true
+  omit_paths = []
+  # Redact matches from build logs and ignore known, intentional public keys
+  redact_output = true
+  # Keep this in sync with SECRETS_SCAN_OMIT_KEYS above
+  omit_keys = ["NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SUPABASE_URL", "SMTP_HOST"]

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from "next/navigation";
-import 'leaflet/dist/leaflet.css';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useUser } from '@/components/user-context';
 
@@ -19,6 +18,7 @@ export default function AuthPage() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [submitting, setSubmitting] = useState(false);
+  const [binCategory, setBinCategory] = useState<'private'|'public'>('private');
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState<string>('');
@@ -27,12 +27,18 @@ export default function AuthPage() {
   const { refresh } = useUser();
   // forgot password now uses dedicated page /auth/forgot
 
-  // Initialize Leaflet map only once client-side
+  // Initialize Leaflet map once and guard against double-init during Fast Refresh or route changes
   useEffect(() => {
+    let destroyed = false;
+    const el = mapRef.current as any;
     (async () => {
-      if (!mapRef.current || (mapRef.current as any)._mapInited) return;
+      if (!el || el._mapInited) return;
       const L = await import('leaflet');
-      const map = L.map(mapRef.current!, {
+      // If a previous Leaflet instance exists on this element, destroy it first
+      if (el._leaflet_id && L) {
+        try { const existing = el._leaflet_map || null; if (existing && typeof existing.remove === 'function') existing.remove(); } catch {}
+      }
+      const map = L.map(el, {
         attributionControl: false,
         zoomControl: false,
         dragging: false,
@@ -41,10 +47,20 @@ export default function AuthPage() {
         boxZoom: false,
         keyboard: false,
       }).setView([20, 0], 2.2);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
-      (mapRef.current as any)._mapInited = true;
+      const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+      const lightUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      const layer = L.tileLayer(isDark ? darkUrl : lightUrl, { maxZoom: 19 });
+      layer.addTo(map);
+      el._mapInited = true;
+      el._leaflet_map = map;
+      // Cleanup on unmount to prevent container reuse error
+      (el as any)._cleanup = () => { try { map.remove(); } catch {} };
     })();
-  }, []);
+    return () => {
+      destroyed = true;
+      try { if (el && el._cleanup) el._cleanup(); } catch {}
+    };
+  }, [isDark]);
 
   const switchMode = (next: "login" | "signup") => {
     if (next === mode) return;
@@ -54,7 +70,7 @@ export default function AuthPage() {
     router.replace(url.pathname + "?" + url.searchParams.toString(), { scroll: false });
     // focus first field after animation
     setTimeout(() => {
-      const id = next === 'login' ? 'login-email' : 'signup-name';
+      const id = next === 'login' ? 'login-identifier' : 'signup-name';
       const el = document.getElementById(id) as HTMLInputElement | null;
       el?.focus();
     }, 180);
@@ -88,7 +104,7 @@ export default function AuthPage() {
   }, [searchParams]);
 
   return (
-  <div className={`relative min-h-screen w-full overflow-hidden font-sans ${isDark ? 'text-white' : 'text-gray-900'}`}>
+  <div className={`relative min-h-screen w-full overflow-x-hidden font-sans ${isDark ? 'text-white' : 'text-gray-900'}`}>
       {/* Map Background */}
     <div ref={mapRef} className="absolute inset-0 -z-20 pointer-events-none" />
       {/* Overlays / gradient noise for depth */}
@@ -98,10 +114,10 @@ export default function AuthPage() {
     <div className="absolute inset-0 -z-10 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.4)_85%)]" />
 
   <main className="min-h-screen px-4 sm:px-5 pb-10 sm:pb-14 flex flex-col overflow-y-auto sm:pt-14 sm:items-center sm:justify-center">
-        {/* Mobile spacer to offset fixed nav (approx 60px total) */}
-        <div className="h-[60px] sm:hidden shrink-0" aria-hidden />
+    {/* Mobile spacer to offset fixed nav (increased to ensure full clearance) */}
+    <div className="h-[76px] sm:hidden shrink-0" aria-hidden />
         <section
-          className={`relative w-full max-w-md mt-2 sm:mt-0 mx-auto backdrop-blur-xl rounded-3xl border px-5 py-7 sm:px-9 sm:py-9 overflow-hidden shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] ${isDark ? 'border-white/15 bg-white/10' : 'border-gray-200 bg-white/80'} `}
+          className={`relative w-full max-w-md mt-4 sm:mt-0 mx-auto backdrop-blur-xl rounded-3xl border px-5 py-7 sm:px-9 sm:py-9 overflow-hidden shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] ${isDark ? 'border-white/15 bg-white/10' : 'border-gray-200 bg-white/80'} `}
           aria-label="Authentication"
         >
           <header className="relative mb-8 text-center">
@@ -120,7 +136,7 @@ export default function AuthPage() {
                 e.preventDefault();
                 setSubmitting(true); setError(null);
                 try {
-                  let identifier = (document.getElementById('login-email') as HTMLInputElement)?.value.trim();
+                  let identifier = (document.getElementById('login-identifier') as HTMLInputElement)?.value.trim();
                   const password = (document.getElementById('login-password') as HTMLInputElement)?.value;
                   if (identifier) identifier = identifier.toLowerCase();
                   const resp = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password }) });
@@ -146,8 +162,8 @@ export default function AuthPage() {
                 </div>
               )}
               <div>
-                <label htmlFor="login-email" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Email Address</label>
-                <input id="login-email" type="email" required placeholder="you@example.com" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/25 focus:border-blue-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-blue-500/60 placeholder-gray-400 text-gray-800'}`} />
+                <label htmlFor="login-identifier" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Email or Username</label>
+                <input id="login-identifier" type="text" required placeholder="you@example.com or username" autoComplete="username" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/25 focus:border-blue-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-blue-500/60 placeholder-gray-400 text-gray-800'}`} />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -168,7 +184,6 @@ export default function AuthPage() {
                 setSubmitting(true); setError(null);
                 const fullName = (document.getElementById('signup-name') as HTMLInputElement)?.value;
                 const usernameRaw = (document.getElementById('signup-username') as HTMLInputElement)?.value;
-                const panchayatName = (document.getElementById('signup-panchayat') as HTMLInputElement)?.value;
                 const loc = (document.getElementById('signup-location') as HTMLInputElement)?.value;
                 const signupEmail = (document.getElementById('signup-email') as HTMLInputElement)?.value;
                 const phone = (document.getElementById('signup-phone') as HTMLInputElement)?.value;
@@ -179,7 +194,7 @@ export default function AuthPage() {
                 if (!/^[a-z0-9_\.]{3,24}$/.test(username)) { setError('Username must be 3-24 chars, lowercase letters, numbers, underscore or dot.'); setSubmitting(false); return; }
                 try {
                   const normalizedPhone = phone.replace(/[\s\-()]/g, '');
-                  const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, panchayat_name: panchayatName, location: loc }) });
+                  const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, location: loc, bin_category: binCategory }) });
                   if (!resp.ok) {
                     const j = await resp.json().catch(()=>({error:'Signup failed'}));
                     setError(j.error || 'Signup failed'); setSubmitting(false); return;
@@ -190,7 +205,7 @@ export default function AuthPage() {
                   setMode('login');
                   // Fill the login email field with the signup email for convenience
                   setTimeout(() => {
-                    const el = document.getElementById('login-email') as HTMLInputElement | null;
+                    const el = document.getElementById('login-identifier') as HTMLInputElement | null;
                     if (el) el.value = signupEmail.trim().toLowerCase();
                   }, 200);
                 } catch (e:any) {
@@ -202,8 +217,16 @@ export default function AuthPage() {
               className={`transition-opacity duration-300 ${mode === 'signup' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}
               autoComplete="on"
             >
-              <div className={`text-[11px] font-semibold tracking-wide mb-4 ${isDark ? 'text-white/55' : 'text-gray-500'}`}>REGISTERING AS PANCHAYAT</div>
-              <div className="grid gap-5 max-h-[calc(100vh-22rem)] sm:max-h-none overflow-y-auto pr-1 -mr-1 custom-scrollbar">
+              <div className={`text-[11px] font-semibold tracking-wide mb-2 ${isDark ? 'text-white/55' : 'text-gray-500'}`}>REGISTERING AS BIN OWNER</div>
+              <div className="mb-3">
+                <label className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Bin Category</label>
+                <div className="flex gap-2 text-xs">
+                  {(['private','public'] as const).map(opt => (
+                    <button type="button" key={opt} onClick={()=> setBinCategory(opt)} className={`px-3 py-1.5 rounded-lg border transition ${binCategory===opt? (isDark? 'bg-white/20 border-white/40 text-white':'bg-emerald-600 border-emerald-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{opt==='private'?'Private':'Public'}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-5 overflow-visible sm:max-h-[calc(100vh-22rem)] sm:overflow-y-auto pr-1 -mr-1 custom-scrollbar">
                 <div>
                   <label htmlFor="signup-name" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Full Name</label>
                   <input id="signup-name" type="text" required placeholder="John Doe" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/20 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
@@ -212,10 +235,7 @@ export default function AuthPage() {
                   <label htmlFor="signup-username" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Username</label>
                   <input id="signup-username" type="text" required placeholder="unique name" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/20 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
                 </div>
-                <div>
-                  <label htmlFor="signup-panchayat" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Panchayat Name</label>
-                  <input id="signup-panchayat" type="text" required placeholder="Greenfield Panchayat" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/20 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
-                </div>
+                {/* Panchayat field removed per rebrand */}
                 <div>
                   <label htmlFor="signup-location" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Location</label>
                   <input id="signup-location" type="text" required placeholder="District / State" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-white/10 border border-white/20 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />

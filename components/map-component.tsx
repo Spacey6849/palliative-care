@@ -6,9 +6,8 @@ import { Icon, LatLngExpression } from 'leaflet';
 import type { Map as LeafletMap } from 'leaflet';
 import type { Marker as LeafletMarker } from 'leaflet';
 import { ExternalLink } from 'lucide-react';
-import { WellData } from '@/lib/well-data';
+import { BinData } from '@/lib/bin-data';
 import { useTheme } from 'next-themes';
-import 'leaflet/dist/leaflet.css';
 
 // Fix for default markers in react-leaflet (apply once in browser to avoid Fast Refresh duplication)
 if (typeof window !== 'undefined' && !(window as any)._leafletDefaultIconPatched) {
@@ -26,13 +25,13 @@ if (typeof window !== 'undefined' && !(window as any)._leafletDefaultIconPatched
 }
 
 interface MapComponentProps {
-  wells: WellData[];
-  selectedWell?: WellData;
-  onWellSelect: (well: WellData) => void;
-  highlightedWellIds?: string[];
+  bins: BinData[];
+  selectedBin?: BinData;
+  onBinSelect: (bin: BinData) => void;
+  highlightedBinIds?: string[];
 }
 
-export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWellIds = [] }: MapComponentProps) {
+export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds = [] }: MapComponentProps) {
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const markerRefs = useState<Record<string, LeafletMarker | null>>({})[0];
@@ -53,20 +52,20 @@ export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWel
   useEffect(() => { setMounted(true); }, []);
   // Auto-open popup when selection changes (e.g., via search selection)
   useEffect(() => {
-    if (selectedWell && markerRefs[selectedWell.id]) {
-      try { markerRefs[selectedWell.id]?.openPopup(); } catch {}
+    if (selectedBin && markerRefs[selectedBin.id]) {
+      try { markerRefs[selectedBin.id]?.openPopup(); } catch {}
     }
-  }, [selectedWell, markerRefs]);
+  }, [selectedBin, markerRefs]);
   if (!mounted) {
     return <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Loading map...</div>;
   }
 
 
-  const center: LatLngExpression = wells.length
-    ? [wells[0].location.lat, wells[0].location.lng]
+  const center: LatLngExpression = bins.length
+    ? [bins[0].location.lat, bins[0].location.lng]
     : [15.488527857031876, 73.85236385002361];
 
-  const createCustomIcon = (status: WellData['status'], highlighted: boolean) => {
+  const createCustomIcon = (status: BinData['status'], highlighted: boolean) => {
     const colors = {
       active: '#22c55e',
       warning: '#f59e0b',
@@ -87,11 +86,11 @@ export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWel
 
   return (
     <MapContainer
-      id="ecowell-map"
+      id="binlink-map"
       whenReady={() => {
         // Access the map instance via the internal leaflet_id on the container element
         try {
-          const el = document.getElementById('ecowell-map') as any;
+          const el = document.getElementById('binlink-map') as any;
           if (el && el._leaflet_id && (window as any).L) {
             // The global Leaflet stores maps in an internal registry; safest is to store via mapRef when first marker opens
             // Fallback: assign via any available _leaflet_map property (not public API, but acceptable for dev cleanup)
@@ -106,8 +105,8 @@ export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWel
       style={{ background: theme === 'dark' ? '#1f2937' : '#f3f4f6' }}
     >
       <ZoomControl position="bottomright" />
-      {selectedWell && <MapFlyTo well={selectedWell} />}
-  <PopupOffset />
+      {selectedBin && <MapFlyTo bin={selectedBin} />}
+      <PopupOffset />
       <TileLayer
         url={(function(){
           const stadiaKey = (process.env as any)['NEXT_PUBLIC_STADIA_API_KEY'];
@@ -122,37 +121,53 @@ export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWel
         })()}
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
       />
-    {wells.map((well) => (
+      {bins.map((bin) => (
         <Marker
-          key={well.id}
-          position={[well.location.lat, well.location.lng]}
-      icon={createCustomIcon(well.status, highlightedWellIds.includes(well.id))}
-          ref={(ref) => { if (ref) markerRefs[well.id] = ref; }}
-          eventHandlers={{ click: () => onWellSelect(well) }}
+          key={bin.id}
+          position={[bin.location.lat, bin.location.lng]}
+          icon={(() => {
+            const tds = Number(bin.data.tds);
+            const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+            const effectiveStatus: BinData['status'] = pct >= 95 ? 'critical' : bin.status;
+            return createCustomIcon(effectiveStatus, highlightedBinIds.includes(bin.id));
+          })()}
+          ref={(ref) => { if (ref) markerRefs[bin.id] = ref; }}
+          eventHandlers={{ click: () => onBinSelect(bin) }}
         >
-          <Popup className="well-popup">
+          <Popup className="bin-popup">
             <div className="p-3 min-w-[220px] space-y-2 font-sans rounded-lg">
               <div className="flex items-start justify-between gap-4">
-                <h3 className="font-semibold text-foreground leading-snug text-sm">{well.name}</h3>
+                <h3 className="font-semibold text-foreground leading-snug text-sm">{bin.name}</h3>
                 <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
-                  well.status === 'active' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-400/30' :
-                  well.status === 'warning' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-400/30' :
-                  well.status === 'critical' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-400/30' :
+                  bin.status === 'active' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-400/30' :
+                  (bin.status === 'warning' || bin.status === 'critical') ? 'bg-red-500/15 text-red-400 ring-1 ring-red-400/30' :
                   'bg-muted/60 text-muted-foreground ring-1 ring-border/40'
-                }`}>{well.status.toUpperCase()}</span>
+                }`}>{bin.status === 'active' ? 'CLOSED' : 'OPEN'}</span>
               </div>
               <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between"><span className="text-muted-foreground">Village</span><span className="font-medium text-foreground truncate max-w-[120px] text-right">{well.village || '—'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Panchayat</span><span className="font-medium text-foreground truncate max-w-[120px] text-right">{well.panchayatName || '—'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Contact</span><span className="font-medium text-foreground text-right">{well.contactNumber || '—'}</span></div>
-                <div className="flex justify-between pt-1 border-t border-border/40"><span className="text-muted-foreground">TDS</span><span className="font-medium text-foreground">{Math.round(well.data.tds)} ppm</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Temp</span><span className="font-medium text-foreground">{well.data.temperature.toFixed(1)}°C</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Water Level</span><span className="font-medium text-foreground">{well.data.waterLevel.toFixed(1)} m</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">pH Level</span><span className="font-medium text-foreground">{well.data.ph.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Bin Location</span><span className="font-medium text-foreground truncate max-w-[140px] text-right">{bin.label || '—'}</span></div>
+                {bin.bin_type && (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Bin Type</span><span className="font-medium text-foreground text-right">{String(bin.bin_type).toUpperCase()}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-muted-foreground">Bin Level</span><span className="font-medium text-foreground text-right">{(() => {
+                  const tds = Number(bin.data.tds);
+                  const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+                  return isFinite(pct) ? pct : 0;
+                })()}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-medium text-foreground text-right">{bin.status === 'offline' ? 'Offline' : 'Online'}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Bin Lid</span><span className="font-medium text-foreground text-right">{bin.status === 'offline' ? '—' : (bin.status === 'active' ? 'Closed' : 'Open')}</span></div>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Updated {well.data.lastUpdated.toLocaleTimeString()}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Updated {bin.data.lastUpdated.toLocaleTimeString()}</p>
+              {(() => {
+                const tds = Number(bin.data.tds);
+                const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+                if (pct >= 95) {
+                  return <p className="text-[10px] text-red-500 font-medium">Bin is Full!</p>;
+                }
+                return <p className="text-[10px] text-muted-foreground">{bin.status === 'active' ? 'All good. Monitoring fill level.' : 'Attention: Bin may be open.'}</p>;
+              })()}
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${well.location.lat},${well.location.lng}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${bin.location.lat},${bin.location.lng}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary dark:text-primary text-[11px] font-medium tracking-wide px-3 py-1.5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-background transition-colors disabled:opacity-60 disabled:cursor-not-allowed no-underline"
@@ -169,11 +184,11 @@ export function MapComponent({ wells, selectedWell, onWellSelect, highlightedWel
 }
 
 // Component to animate map view when selectedWell changes
-function MapFlyTo({ well }: { well: WellData }) {
+function MapFlyTo({ bin }: { bin: BinData }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo([well.location.lat, well.location.lng], 15, { duration: 1.2, easeLinearity: 0.25 });
-  }, [well, map]);
+    map.flyTo([bin.location.lat, bin.location.lng], 15, { duration: 1.2, easeLinearity: 0.25 });
+  }, [bin, map]);
   return null;
 }
 

@@ -12,9 +12,10 @@ interface MetricCardProps {
   icon: React.ReactNode;
   onClick?: () => void;
   isActive?: boolean;
+  align?: 'left'|'center'|'right';
 }
 
-export function MetricCard({ label, value, unit, status, icon, onClick, isActive }: MetricCardProps) {
+export function MetricCard({ label, value, unit, status, icon, onClick, isActive, align = 'left' }: MetricCardProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'good':
@@ -130,7 +131,7 @@ export function MetricCard({ label, value, unit, status, icon, onClick, isActive
                 </div>
               </div>
             </div>
-            <div className="pl-10 -mt-1">
+            <div className={`pl-10 -mt-1 ${align==='center' ? 'text-center -ml-10' : align==='right' ? 'text-right' : ''}`}>
               <p className={`text-xl sm:text-[22px] font-bold leading-none tracking-tight ${getTextColor(status)} select-none`}>                
                 <motion.span
                   key={displayValue}

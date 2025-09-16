@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
     const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      global: { headers: { 'X-Client-Info': 'ecowell-app/forgot-route' } }
+  global: { headers: { 'X-Client-Info': 'binlink-app/forgot-route' } }
     });
 
     // Verify schema has required columns; if not, return a generic service-unavailable message

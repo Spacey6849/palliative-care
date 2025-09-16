@@ -24,7 +24,8 @@ export function useAuthOverlay() {
 export function AuthOverlayProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("login");
-  const [roleChoice, setRoleChoice] = useState<'admin' | 'panchayat'>('panchayat');
+  const [roleChoice, setRoleChoice] = useState<'admin' | 'owner'>('owner');
+  const [binCategory, setBinCategory] = useState<'private'|'public'>('private');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Supabase removed; using custom REST endpoints
@@ -33,7 +34,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
   const isDark = theme === 'dark';
 
   const openLogin = useCallback(() => { setMode("login"); setOpen(true); }, []);
-  const openSignup = useCallback(() => { setMode("signup"); setRoleChoice('panchayat'); setOpen(true); }, []);
+  const openSignup = useCallback(() => { setMode("signup"); setRoleChoice('owner'); setOpen(true); }, []);
   const close = useCallback(() => setOpen(false), []);
 
   // ESC key to close
@@ -49,7 +50,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
       <AnimatePresence>
         {open && (
           <motion.div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 pt-20 sm:pt-4 overflow-y-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -69,7 +70,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 25, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-              className={`relative w-full ${mode==='signup' ? 'max-w-2xl' : 'max-w-md'} rounded-3xl backdrop-blur-2xl shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] px-7 py-8 sm:px-10 sm:py-10 border ${isDark ? 'border-white/20 bg-white/12 text-white' : 'border-gray-200 bg-white/85 text-gray-800'} `}
+              className={`relative w-full ${mode==='signup' ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto rounded-3xl backdrop-blur-2xl shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] px-7 py-8 sm:px-10 sm:py-10 border ${isDark ? 'border-white/20 bg-white/12 text-white' : 'border-gray-200 bg-white/85 text-gray-800'} `}
               role="dialog"
               aria-modal="true"
               aria-label={mode === 'login' ? 'Login form' : 'Signup form'}
@@ -87,7 +88,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                   onSubmit={async (e) => { 
                     e.preventDefault();
                     setSubmitting(true); setError(null);
-                    // Identifier can be email or username (for panchayat users). For admin it can be 'admin' or admin email.
+                    // Identifier can be email or username. For admin it can be 'admin' or admin email.
                     let identifier = (document.getElementById('ov-login-email') as HTMLInputElement)?.value.trim();
                     // Normalize: usernames are stored lowercase; treat email case-insensitively
                     if (identifier) identifier = identifier.toLowerCase();
@@ -101,13 +102,13 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                             const j = await resp.json().catch(()=>({error:'Invalid admin credentials'}));
                             setError(j.error || 'Admin auth failed'); setSubmitting(false); return;
                           }
-                          try { localStorage.setItem('ecw_admin','1'); } catch {}
+                          // Unified session cookie is sufficient; no need for legacy flags
                           await refresh(); close(); setSubmitting(false); return;
                         } else {
                           setError('Invalid admin identifier.'); setSubmitting(false); return;
                         }
                       }
-                      // Panchayat login
+                      // Bin Owner login
                       const resp = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password }) });
                       if (!resp.ok) {
                         const j = await resp.json().catch(()=>({error:'Login failed'}));
@@ -124,8 +125,8 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                   <div>
                     <label className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Login As</label>
                     <div className="flex gap-3 text-xs">
-                      {(['panchayat','admin'] as const).map(r => (
-                        <button type="button" key={r} onClick={()=> setRoleChoice(r)} className={`px-3 py-1.5 rounded-lg border transition ${roleChoice===r? (isDark? 'bg-white/20 border-white/40 text-white':'bg-blue-600 border-blue-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{r === 'panchayat' ? 'Panchayat' : 'Admin'}</button>
+                      {(['owner','admin'] as const).map(r => (
+                        <button type="button" key={r} onClick={()=> setRoleChoice(r)} className={`px-3 py-1.5 rounded-lg border transition ${roleChoice===r? (isDark? 'bg-white/20 border-white/40 text-white':'bg-blue-600 border-blue-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{r === 'owner' ? 'User' : 'Admin'}</button>
                       ))}
                     </div>
                   </div>
@@ -151,21 +152,20 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                     setSubmitting(true); setError(null);
                     const fullName = (document.getElementById('ov-signup-name') as HTMLInputElement)?.value;
                     const usernameRaw = (document.getElementById('ov-signup-username') as HTMLInputElement)?.value;
-                    const panchayatName = (document.getElementById('ov-signup-panchayat') as HTMLInputElement)?.value;
                     const location = (document.getElementById('ov-signup-location') as HTMLInputElement)?.value;
                     const signupEmail = (document.getElementById('ov-signup-email') as HTMLInputElement)?.value;
                     const phone = (document.getElementById('ov-signup-phone') as HTMLInputElement)?.value;
                     const pw = (document.getElementById('ov-signup-password') as HTMLInputElement)?.value; 
                     const cf = (document.getElementById('ov-signup-confirm') as HTMLInputElement)?.value; 
                     if (pw !== cf) { setError('Passwords do not match'); setSubmitting(false); return; }
-                    // Force signup role to panchayat (no admin self-registration)
+                    // Force signup role to standard user (no admin self-registration)
                     if (roleChoice === 'admin') { setError('Admin registration disabled.'); setSubmitting(false); return; }
                     // Basic phone normalization (remove spaces, dashes, parentheses)
                     const username = usernameRaw.trim().toLowerCase();
                     if (!/^[a-z0-9_\.]{3,24}$/.test(username)) { setError('Username must be 3-24 chars, lowercase letters, numbers, underscore or dot.'); setSubmitting(false); return; }
                     try {
                       const normalizedPhone = phone.replace(/[\s\-()]/g, '');
-                      const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, panchayat_name: panchayatName, location }) });
+                      const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, location, bin_category: binCategory }) });
                       if (!resp.ok) {
                         const j = await resp.json().catch(()=>({error:'Signup failed'}));
                         setError(j.error || 'Signup failed'); setSubmitting(false); return;
@@ -180,8 +180,16 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                   className={`space-y-5 transition-opacity duration-300 ${mode === 'signup' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}
                   autoComplete="on"
                 >
-          <div className={`text-[11px] uppercase tracking-wide ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Registering as Panchayat</div>
-                  <div className="grid gap-5 sm:grid-cols-2">
+          <div className={`text-[11px] uppercase tracking-wide ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Registering as Bin Owner</div>
+    <div className="mt-1 mb-1">
+            <label className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Bin Category</label>
+            <div className="flex gap-2 text-xs">
+        {(['private','public'] as const).map(opt => (
+    <button type="button" key={opt} onClick={()=> setBinCategory(opt)} className={`px-3 py-1.5 rounded-lg border transition ${binCategory===opt? (isDark? 'bg-white/20 border-white/40 text-white':'bg-emerald-600 border-emerald-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{opt==='private'?'Private':'Public'}</button>
+              ))}
+            </div>
+          </div>
+      <div className="grid gap-5 sm:grid-cols-2">
                     <div className="sm:col-span-1">
             <label htmlFor="ov-signup-name" className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Full Name</label>
             <input id="ov-signup-name" type="text" required placeholder="John Doe" className={`block w-full rounded-lg focus:ring-0 text-sm px-3 py-2.5 outline-none transition ${isDark ? 'bg-white/10 border border-white/25 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
@@ -189,10 +197,6 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                     <div className="sm:col-span-1">
             <label htmlFor="ov-signup-username" className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Username</label>
             <input id="ov-signup-username" type="text" required placeholder="unique name" className={`block w-full rounded-lg focus:ring-0 text-sm px-3 py-2.5 outline-none transition ${isDark ? 'bg-white/10 border border-white/25 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
-                    </div>
-                    <div className="sm:col-span-1">
-            <label htmlFor="ov-signup-panchayat" className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Panchayat Name</label>
-            <input id="ov-signup-panchayat" type="text" required placeholder="Greenfield Panchayat" className={`block w-full rounded-lg focus:ring-0 text-sm px-3 py-2.5 outline-none transition ${isDark ? 'bg-white/10 border border-white/25 focus:border-emerald-400/70 placeholder-white/40' : 'bg-white border border-gray-300 focus:border-emerald-500/60 placeholder-gray-400 text-gray-800'}`} />
                     </div>
                     <div className="sm:col-span-2">
             <label htmlFor="ov-signup-location" className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Location</label>

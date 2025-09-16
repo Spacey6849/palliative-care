@@ -108,7 +108,7 @@
   }
   .leaflet-popup-content { margin: 0; line-height: 1.3; }
   .leaflet-popup-tip-container { display: none; } /* cleaner modern panel look */
-  .well-popup { margin: 0; }
+  .bin-popup { margin: 0; }
   .dark .leaflet-popup-content-wrapper {
     background: hsl(var(--card) / 0.9);
     border: 1px solid hsl(var(--border));

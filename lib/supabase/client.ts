@@ -7,7 +7,7 @@ const stripInlineComment = (v: string) => v.replace(/\s+#.*$/, '');
 // Resolve env lazily to avoid build-time evaluation/import errors
 function resolveUrl(): string {
   // Use bracket access to avoid Next.js compile-time inlining into server bundle
-  const rawPub = (process.env as Record<string, string | undefined>)['NEXT_PUBLIC_SUPABASE_URL'];
+  const rawPub = (process.env as Record<string, string | undefined>)['NEXT_PUBLIC_SUPABASE_URL'] || 'https://dcffuprpdsvunvxseocj.supabase.co';
   const rawSrv = (process.env as Record<string, string | undefined>)['SUPABASE_URL'];
   let url = stripQuotes(rawPub || rawSrv);
   if (!url) return '';
@@ -16,12 +16,12 @@ function resolveUrl(): string {
 }
 function resolveAnon(): string {
   // Bracket access prevents bundlers from replacing at build time
-  const rawPub = (process.env as Record<string, string | undefined>)['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
+  const rawPub = (process.env as Record<string, string | undefined>)['NEXT_PUBLIC_SUPABASE_ANON_KEY'] || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjZmZ1cHJwZHN2dW52eHNlb2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzQ5NjgsImV4cCI6MjA3MzYxMDk2OH0.UoQAdkGyjxZzrfLPExRGfBjp_LpnziJe7LvTWPrmgDw';
   const rawSrv = (process.env as Record<string, string | undefined>)['SUPABASE_ANON_KEY'];
   return stripInlineComment(stripQuotes(rawPub || rawSrv));
 }
 function resolveService(): string {
-  return stripInlineComment(stripQuotes((process.env as Record<string, string | undefined>)['SUPABASE_SERVICE_ROLE_KEY']));
+  return stripInlineComment(stripQuotes((process.env as Record<string, string | undefined>)['SUPABASE_SERVICE_ROLE_KEY'] || ''));
 }
 
 const URL_PATTERN = /^https:\/\/([a-zA-Z0-9-]+)\.supabase\.(co|in)$/;
@@ -55,7 +55,7 @@ function createUniversalClient(): SupabaseClient {
       autoRefreshToken: typeof window !== 'undefined',
       detectSessionInUrl: typeof window !== 'undefined',
     },
-    global: { headers: { 'X-Client-Info': typeof window === 'undefined' ? 'ecowell-app/server' : 'ecowell-app/browser' } }
+    global: { headers: { 'X-Client-Info': typeof window === 'undefined' ? 'binlink-app/server' : 'binlink-app/browser' } }
   });
 }
 

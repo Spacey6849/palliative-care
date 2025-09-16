@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
     }
     const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      global: { headers: { 'X-Client-Info': 'ecowell-app/signup-route' } }
+      global: { headers: { 'X-Client-Info': 'binlink-app/signup-route' } }
     });
 
-    const { email, password, username, full_name, phone, panchayat_name, location } = await req.json();
+  const { email, password, username, full_name, phone, location, bin_category } = await req.json();
     if (!email || !password || !username) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
@@ -44,14 +44,15 @@ export async function POST(req: NextRequest) {
     const hash = await bcrypt.hash(password, 10);
     const id = randomUUID();
     const verifyToken = createHash('sha256').update(randomUUID() + Date.now().toString()).digest('hex');
+    const cat = (typeof bin_category === 'string' && (bin_category === 'private' || bin_category === 'public')) ? bin_category : 'private';
     const { error: insertErr, status: insertStatus } = await sbAdmin.from('users').insert({
       id,
       email: email.toLowerCase(),
       username: username.toLowerCase(),
       full_name: full_name || null,
       phone: phone || null,
-      panchayat_name: panchayat_name || null,
       location: location || null,
+      bin_category: cat,
       password_hash: hash,
       email_verification_token: verifyToken,
       email_verification_sent_at: new Date().toISOString(),

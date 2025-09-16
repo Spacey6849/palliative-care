@@ -1,4 +1,5 @@
 import './globals.css';
+import 'leaflet/dist/leaflet.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -9,8 +10,8 @@ import { UserProvider } from '@/components/user-context';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'EcoWell AI – Well Monitoring Dashboard',
-  description: 'EcoWell AI: real-time groundwater & well monitoring with interactive mapping',
+  title: 'BinLink AI – Smart Bin Monitoring',
+  description: 'BinLink AI: real-time smart garbage bin monitoring with interactive mapping',
   icons: {
     icon: '/favicon.ico'
   },
@@ -41,7 +42,7 @@ export default function RootLayout({
           </UserProvider>
         </ThemeProvider>
         <noscript>
-          <div style={{padding:'1rem',textAlign:'center',fontSize:'0.85rem'}}>EcoWell AI requires JavaScript for interactive maps and theming.</div>
+          <div style={{padding:'1rem',textAlign:'center',fontSize:'0.85rem'}}>BinLink AI requires JavaScript for interactive maps and theming.</div>
         </noscript>
       </body>
     </html>

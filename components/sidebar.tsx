@@ -18,47 +18,62 @@ try {
   remarkGfm = () => {};
 }
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Search, Gauge, Droplets, Thermometer, Activity } from 'lucide-react';
+import { ChevronLeft, Search, Gauge } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { WellData } from '@/lib/well-data';
+import { BinData } from '@/lib/bin-data';
 import { MetricCard } from './metric-card';
-import { WellChart } from './well-chart';
+// Bin chart component removed with wells cleanup
 import { ThemeToggle } from './theme-toggle';
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+} from 'recharts';
 
 interface SidebarProps {
-  wells: WellData[];
-  selectedWell?: WellData;
-  onWellSelect: (well: WellData) => void;
-  onSearchHighlightChange?: (ids: string[]) => void; // emit matching well ids for map highlighting
+  bins: BinData[];
+  selectedBin?: BinData;
+  onBinSelect: (bin: BinData) => void;
+  onSearchHighlightChange?: (ids: string[]) => void; // emit matching bin ids for map highlighting
 }
 
-export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightChange }: SidebarProps) {
+export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChange }: SidebarProps) {
   // Start collapsed by default (mobile); expand on desktop after mount
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChart, setActiveChart] = useState<'ph' | 'tds' | 'temperature' | 'waterLevel'>('ph');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const filteredWells = useMemo(() => {
+  const filteredBins = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return wells.filter(well => well.name.toLowerCase().includes(q));
-  }, [wells, searchQuery]);
+    return bins.filter(bin => bin.name.toLowerCase().includes(q));
+  }, [bins, searchQuery]);
 
   // Emit highlight ids for map markers
   useEffect(() => {
     if (!onSearchHighlightChange) return;
-    // Only compute ids when query changes (filteredWells already memoized on query/wells)
-    const ids = searchQuery ? filteredWells.map(w=>w.id) : [];
+    // Only compute ids when query changes (filteredBins already memoized)
+    const ids = searchQuery ? filteredBins.map(b=>b.id) : [];
     onSearchHighlightChange(ids);
-  }, [searchQuery, filteredWells, onSearchHighlightChange]);
+  }, [searchQuery, filteredBins, onSearchHighlightChange]);
 
   // Select helper
-  const selectWell = (well: WellData) => {
-    onWellSelect(well);
-    setSearchQuery(well.name);
+  const selectBin = (bin: BinData) => {
+    onBinSelect(bin);
+    setSearchQuery(bin.name);
     setShowSuggestions(false);
   };
 
@@ -122,12 +137,14 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className={`flex group fixed md:absolute top-1/2 -translate-y-1/2
-          ${isCollapsed ? 'left-2' : 'right-2 md:left-[340px] md:right-auto'}
-          z-[1250] w-7 h-14 items-center justify-center rounded-full md:rounded-r-xl bg-white/95 dark:bg-gray-900/90 border border-gray-300/60 dark:border-gray-700/60 shadow-lg hover:bg-white dark:hover:bg-gray-900 hover:shadow-xl transition-all duration-200`}
+          ${isCollapsed ? 'left-0' : 'left-0 md:left-[360px]'}
+          z-[1250] w-8 h-16 items-center justify-center rounded-l-none rounded-r-md bg-white/95 dark:bg-gray-900/90 border border-gray-300/70 dark:border-gray-700/70 shadow-lg hover:bg-white dark:hover:bg-gray-900 hover:shadow-xl transition-all duration-200`}
         aria-label={isCollapsed ? 'Open sidebar' : 'Close sidebar'}
+        aria-expanded={!isCollapsed}
+        title={isCollapsed ? 'Open sidebar' : 'Close sidebar'}
       >
-        <motion.div animate={{ rotate: isCollapsed ? 180 : 0 }} transition={{ duration: 0.25 }}>
-          <ChevronLeft className="h-4 w-4 text-gray-600 dark:text-gray-300 group-hover:text-gray-800 dark:group-hover:text-gray-100 transition-colors" />
+        <motion.div animate={{ rotate: isCollapsed ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronLeft className="h-4 w-4 text-gray-800 dark:text-gray-100 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
         </motion.div>
       </button>
       <motion.div
@@ -149,7 +166,7 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-5">
-                <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-white">Well Monitor</h1>
+                <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-white">Bin Monitor</h1>
                 <ThemeToggle />
               </div>
 
@@ -166,7 +183,7 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
-                    placeholder="Search wells..."
+                    placeholder="Search bins..."
                     value={searchQuery}
                     onFocus={()=> setShowSuggestions(true)}
                     onBlur={(e)=> {
@@ -175,26 +192,26 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
                     }}
                     onKeyDown={(e)=> {
                       if (e.key === 'Enter') {
-                        if (filteredWells.length === 1) {
-                          selectWell(filteredWells[0]);
-                        } else if (filteredWells.length > 1) {
-                          selectWell(filteredWells[0]);
+                        if (filteredBins.length === 1) {
+                          selectBin(filteredBins[0]);
+                        } else if (filteredBins.length > 1) {
+                          selectBin(filteredBins[0]);
                         }
                       }
                     }}
                     onChange={(e) => {setSearchQuery(e.target.value); setShowSuggestions(true);} }
                     className="pl-10 h-10 text-sm rounded-full border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-secondary/60 focus-visible:ring-0 focus:border-gray-300 dark:focus:border-gray-600"
                   />
-                  {showSuggestions && searchQuery && filteredWells.length > 0 && (
+                  {showSuggestions && searchQuery && filteredBins.length > 0 && (
                     <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-900/95 border border-border/70 dark:border-border rounded-xl shadow-xl overflow-hidden z-40 animate-in fade-in-0 zoom-in-95">
                       <ul className="max-h-56 overflow-auto py-1 text-sm">
-                        {filteredWells.map(w => (
+                        {filteredBins.map(w => (
                           <li key={w.id}>
                             <button
                               type="button"
                               onMouseDown={(e)=> e.preventDefault()}
-                              onClick={()=> selectWell(w)}
-                              className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-muted/60 dark:hover:bg-muted/40 transition-colors ${selectedWell?.id===w.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                              onClick={()=> selectBin(w)}
+                              className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-muted/60 dark:hover:bg-muted/40 transition-colors ${selectedBin?.id===w.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
                             >
                               <span className="truncate pr-3">{w.name}</span>
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${w.status==='active'?'bg-emerald-400': w.status==='warning'?'bg-amber-400': w.status==='critical'?'bg-red-400':'bg-gray-400'}`}></span>
@@ -208,121 +225,95 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
 
                 <TabsContent value="dashboard" className="flex-1 overflow-auto space-y-4">
                   {/* Summary Metrics */}
-                  {selectedWell && (
+                  {selectedBin && (
                     <>
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                         <CardHeader className="pb-1">
-                          <CardTitle className="text-base font-semibold tracking-tight">{selectedWell.name}</CardTitle>
+                          <CardTitle className="text-base font-semibold tracking-tight">{selectedBin.name}</CardTitle>
                           <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Last updated: {selectedWell.data.lastUpdated.toLocaleTimeString()}
+                            Last updated: {selectedBin.data.lastUpdated.toLocaleTimeString()}
                           </p>
                         </CardHeader>
                         <CardContent className="space-y-3 pt-2">
                           <div className="grid grid-cols-2 gap-2.5">
-                            <MetricCard
-                              label="pH Level"
-                              value={selectedWell.data.ph.toFixed(1)}
-                              unit=""
-                              status={getMetricStatus(selectedWell.data.ph, 'ph')}
-                              icon={<Gauge className="h-4 w-4" />}
-                              onClick={() => setActiveChart('ph')}
-                              isActive={activeChart === 'ph'}
-                            />
-                            <MetricCard
-                              label="TDS"
-                              value={Math.round(selectedWell.data.tds).toString()}
-                              unit="ppm"
-                              status={getMetricStatus(selectedWell.data.tds, 'tds')}
-                              icon={<Droplets className="h-4 w-4" />}
-                              onClick={() => setActiveChart('tds')}
-                              isActive={activeChart === 'tds'}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2.5">
-                            <MetricCard
-                              label="Temperature"
-                              value={selectedWell.data.temperature.toFixed(1)}
-                              unit="°C"
-                              status={getMetricStatus(selectedWell.data.temperature, 'temperature')}
-                              icon={<Thermometer className="h-4 w-4" />}
-                              onClick={() => setActiveChart('temperature')}
-                              isActive={activeChart === 'temperature'}
-                            />
-                            <MetricCard
-                              label="Water Level"
-                              value={selectedWell.data.waterLevel.toFixed(1)}
-                              unit="m"
-                              status={getMetricStatus(selectedWell.data.waterLevel, 'waterLevel')}
-                              icon={<Activity className="h-4 w-4" />}
-                              onClick={() => setActiveChart('waterLevel')}
-                              isActive={activeChart === 'waterLevel'}
-                            />
+                            {(() => {
+                              // Temporary Fill % derived from TDS (200-800ppm -> 0-100%)
+                              const tds = Number(selectedBin.data.tds);
+                              const pct = Math.max(0, Math.min(100, Math.round(((tds - 200) / 600) * 100)));
+                              return (
+                                <MetricCard
+                                  label="Bin Level"
+                                  value={pct.toString()}
+                                  unit="%"
+                                  status={pct < 70 ? 'good' : pct < 90 ? 'warning' : 'critical'}
+                                  icon={<Gauge className="h-4 w-4" />}
+                                  onClick={() => setActiveChart('tds')}
+                                  isActive={activeChart === 'tds'}
+                                />
+                              );
+                            })()}
+                            {(() => {
+                              const isClosed = selectedBin.status === 'active';
+                              const isOffline = selectedBin.status === 'offline';
+                              const value = isOffline ? 'Offline' : (isClosed ? 'Closed' : 'Open');
+                              const s = isOffline ? 'warning' : isClosed ? 'good' : 'critical';
+                              return (
+                                <MetricCard
+                                  label="Status"
+                                  value={value}
+                                  unit=""
+                                  status={s as any}
+                                  icon={<Gauge className="h-4 w-4" />}
+                                  onClick={() => setActiveChart('tds')}
+                                  isActive={false}
+                                  align="center"
+                                />
+                              );
+                            })()}
                           </div>
                         </CardContent>
                       </Card>
-
-                      {/* Chart Section */}
+                      {/* Trend Section Placeholder (to be implemented for bins) */}
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
-                        <CardHeader className="pb-1">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-base font-semibold tracking-tight">24-Hour Trends</CardTitle>
-                          </div>
-                          <div className="mt-2 inline-flex bg-gray-100 dark:bg-gray-800 rounded-full p-1 w-full overflow-x-auto no-scrollbar">
-                            {(['ph', 'tds', 'temperature', 'waterLevel'] as const).map((metric) => {
-                              const label = metric === 'ph' ? 'pH' : metric === 'tds' ? 'TDS' : metric === 'temperature' ? 'Temp' : 'Level';
-                              const active = activeChart === metric;
-                              return (
-                                <button
-                                  key={metric}
-                                  onClick={() => setActiveChart(metric)}
-                                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap ${
-                                    active
-                                      ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow'
-                                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                                  }`}
-                                >
-                                  {label}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base font-semibold tracking-tight">Trends</CardTitle>
                         </CardHeader>
-                        <CardContent className="pt-3 pb-2">
-                          <WellChart well={selectedWell} metric={activeChart} />
+                        <CardContent className="pt-1 pb-3 text-sm text-gray-600 dark:text-gray-400">
+                          Fill level trends coming soon.
                         </CardContent>
                       </Card>
                     </>
                   )}
 
-                  {/* Wells List */}
+                  {/* Bins List */}
                   <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold tracking-tight">Wells Overview</CardTitle>
+                      <CardTitle className="text-base font-semibold tracking-tight">Bins Overview</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-1.5 max-h-56 overflow-auto pr-1 custom-scrollbar">
-                        {filteredWells.map((well) => (
+                        {filteredBins.map((bin) => (
                           <motion.div
-                            key={well.id}
+                            key={bin.id}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                           >
                             <Button
-                              variant={selectedWell?.id === well.id ? 'default' : 'ghost'}
+                              variant={selectedBin?.id === bin.id ? 'default' : 'ghost'}
                               className="w-full justify-start px-3 py-2 h-auto rounded-lg text-sm"
-                              onClick={() => selectWell(well)}
+                              onClick={() => selectBin(bin)}
                             >
                               <div className="flex items-center justify-between w-full">
                                 <div className="text-left">
-                                  <p className="font-medium truncate leading-tight">{well.name}</p>
+                                  <p className="font-medium truncate leading-tight">{bin.name}</p>
                                   <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
-                                    pH {well.data.ph.toFixed(1)} • TDS {Math.round(well.data.tds)}ppm
+                                    {(() => { const pct = Math.max(0, Math.min(100, Math.round(((Number(bin.data.tds) - 200) / 600) * 100))); return `Level ${pct}%`; })()} • {bin.status === 'offline' ? 'Offline' : 'Online'} • Lid {bin.status === 'offline' ? '—' : (bin.status === 'active' ? 'Closed' : 'Open')}
                                   </p>
                                 </div>
                                 <div className={`w-3 h-3 rounded-full ${
-                                  well.status === 'active' ? 'bg-green-500' :
-                                  well.status === 'warning' ? 'bg-yellow-500' :
-                                  well.status === 'critical' ? 'bg-red-500' :
+                                  bin.status === 'active' ? 'bg-green-500' :
+                                  bin.status === 'warning' ? 'bg-yellow-500' :
+                                  bin.status === 'critical' ? 'bg-red-500' :
                                   'bg-gray-500'
                                 }`} />
                               </div>
@@ -335,7 +326,7 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
                 </TabsContent>
 
                 <TabsContent value="analytics" className="flex-1 overflow-auto space-y-4">
-                  <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
+                      <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base font-semibold tracking-tight">System Analytics</CardTitle>
                     </CardHeader>
@@ -343,36 +334,106 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
                       <div className="grid grid-cols-2 gap-3">
                         <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                           <p className="text-xl font-bold text-blue-600 dark:text-blue-400 leading-tight">
-                            {wells.length}
+                            {bins.length}
                           </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Total Wells</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Bins</p>
                         </div>
                         <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                           <p className="text-xl font-bold text-green-600 dark:text-green-400 leading-tight">
-                            {wells.filter(w => w.status === 'active').length}
+                            {bins.filter((w) => w.status === 'active').length}
                           </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Active</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Closed</p>
                         </div>
                         <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                           <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400 leading-tight">
-                            {wells.filter(w => w.status === 'warning').length}
+                            {bins.filter((w) => w.status === 'warning' || w.status === 'critical').length}
                           </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Warning</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Open</p>
                         </div>
                         <div className="text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
                           <p className="text-xl font-bold text-red-600 dark:text-red-400 leading-tight">
-                            {wells.filter(w => w.status === 'critical').length}
+                            {bins.filter((w) => w.status === 'offline').length}
                           </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Critical</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Offline</p>
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+                  {/* AI Predictive Graph (monthly) - placeholder using current data */}
+                  <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-semibold tracking-tight">AI Predictive Fill (Monthly)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-1">
+                      {(() => {
+                        const days = Array.from({ length: 30 }, (_, i) => i + 1);
+                        // Build naive baseline: average current derived fill as base, add small variance
+                        const avgFill = bins.length
+                          ? Math.round(
+                              bins.reduce((s: number, w: BinData) => {
+                                const pct = Math.max(0, Math.min(100, Math.round(((Number(w.data.tds) - 200) / 600) * 100)));
+                                return s + pct;
+                              }, 0) / bins.length
+                            )
+                          : 0;
+                        const data = days.map((d) => ({
+                          day: d,
+                          predicted: Math.max(0, Math.min(100, Math.round(avgFill + Math.sin(d / 4) * 5 + (d * 0.6))))
+                        }));
+                        return (
+                          <div className="h-48">
+                            <ChartContainer config={{ predicted: { label: 'Predicted', color: 'hsl(200 98% 39%)' } }}>
+                              <ResponsiveContainer>
+                                <LineChart data={data} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                                  <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" strokeWidth={2} dot={false} />
+                                  <ChartTooltip content={<ChartTooltipContent />} />
+                                  <ChartLegend content={<ChartLegendContent />} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </ChartContainer>
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+                  {/* Overall bins graph */}
+                  <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-semibold tracking-tight">Overall Bin Levels</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-1">
+                      {(() => {
+                        const data = bins.map((w: BinData) => ({
+                          name: w.name.length > 10 ? w.name.slice(0, 10) + '…' : w.name,
+                          level: Math.max(0, Math.min(100, Math.round(((Number(w.data.tds) - 200) / 600) * 100)))
+                        }));
+                        return (
+                          <div className="h-48">
+                            <ChartContainer config={{ level: { label: 'Level', color: 'hsl(142 72% 29%)' } }}>
+                              <ResponsiveContainer>
+                                <LineChart data={data} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                                  <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
+                                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                                  <Line type="monotone" dataKey="level" stroke="var(--color-level)" strokeWidth={2} dot={false} />
+                                  <ChartTooltip content={<ChartTooltipContent />} />
+                                  <ChartLegend content={<ChartLegendContent />} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </ChartContainer>
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 </TabsContent>
 
                 {/* Route Planner Tab */}
                 <TabsContent value="route" className="flex-1 overflow-auto space-y-4">
-                  <RoutePlanner wells={wells} />
+                  <RoutePlanner bins={bins} />
                 </TabsContent>
 
                 {/* AI Chatbot Tab */}
@@ -395,9 +456,9 @@ export function Sidebar({ wells, selectedWell, onWellSelect, onSearchHighlightCh
 // --- Helper Components Added Below ---
 // (useEffect already imported at top)
 
-interface RoutePlannerProps { wells: WellData[] }
+interface RoutePlannerProps { bins: BinData[] }
 
-function RoutePlanner({ wells }: RoutePlannerProps) {
+function RoutePlanner({ bins }: RoutePlannerProps) {
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [optLink, setOptLink] = useState<string | null>(null);
@@ -425,16 +486,16 @@ function RoutePlanner({ wells }: RoutePlannerProps) {
   };
 
   const distances = position
-    ? wells.map(w => ({
-        well: w,
-        distanceKm: haversine(position.coords.latitude, position.coords.longitude, w.location.lat, w.location.lng)
+    ? bins.map(b => ({
+        bin: b,
+        distanceKm: haversine(position.coords.latitude, position.coords.longitude, b.location.lat, b.location.lng)
       }))
     : [];
 
   // Simple nearest-neighbor route (placeholder for full TSP) starting at user position
   const routeOrder = () => {
-    if (!position || wells.length === 0) return [] as { name: string; distanceFromPrev: number }[];
-    const remaining = [...wells];
+    if (!position || bins.length === 0) return [] as { name: string; distanceFromPrev: number }[];
+    const remaining = [...bins];
     let currentLat = position.coords.latitude;
     let currentLng = position.coords.longitude;
     const order: { name: string; distanceFromPrev: number }[] = [];
@@ -458,18 +519,18 @@ function RoutePlanner({ wells }: RoutePlannerProps) {
   useEffect(() => {
     if (!position || order.length === 0) { setOptLink(null); return; }
     // Build Google Maps directions URL: origin -> waypoints -> destination (last)
-    // If only one well: origin user position to that well.
+    // If only one bin: origin user position to that bin.
     const origin = `${position.coords.latitude},${position.coords.longitude}`;
     const coordsList: string[] = [];
     let prevLat = position.coords.latitude;
     let prevLng = position.coords.longitude;
     let totalKm = 0;
     order.forEach(o => {
-      const w = wells.find(wl => wl.name === o.name);
-      if (w) {
-        coordsList.push(`${w.location.lat},${w.location.lng}`);
+      const b = bins.find(bn => bn.name === o.name);
+      if (b) {
+        coordsList.push(`${b.location.lat},${b.location.lng}`);
         totalKm += o.distanceFromPrev;
-        prevLat = w.location.lat; prevLng = w.location.lng;
+        prevLat = b.location.lat; prevLng = b.location.lng;
       }
     });
     if (!coordsList.length) { setOptLink(null); return; }
@@ -480,7 +541,7 @@ function RoutePlanner({ wells }: RoutePlannerProps) {
       ? `${base}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&waypoints=${encodeURIComponent(waypoints)}&travelmode=driving`
       : `${base}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
     setOptLink(url);
-  }, [order, position, wells]);
+  }, [order, position, bins]);
 
   const estimatedMinutes = (totalDistance / 40) * 60; // crude avg 40km/h
 
@@ -503,8 +564,8 @@ function RoutePlanner({ wells }: RoutePlannerProps) {
         {position && distances.length > 0 && (
           <div className="space-y-1">
             {distances.map(d => (
-              <div key={d.well.id} className="flex items-center justify-between rounded-md px-2 py-1 bg-gray-100/70 dark:bg-gray-900/40">
-                <span className="font-medium text-gray-800 dark:text-gray-200">{d.well.name}</span>
+              <div key={d.bin.id} className="flex items-center justify-between rounded-md px-2 py-1 bg-gray-100/70 dark:bg-gray-900/40">
+                <span className="font-medium text-gray-800 dark:text-gray-200">{d.bin.name}</span>
                 <span className="text-xs text-gray-600 dark:text-gray-400">{d.distanceKm.toFixed(2)} km</span>
               </div>
             ))}
@@ -528,8 +589,8 @@ function RoutePlanner({ wells }: RoutePlannerProps) {
             )}
           </div>
         )}
-        {position && wells.length <= 1 && (
-          <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more wells to compute multi-stop routes.</div>
+        {position && bins.length <= 1 && (
+          <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more bins to compute multi-stop routes.</div>
         )}
       </CardContent>
     </Card>
@@ -540,7 +601,7 @@ interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
 function AIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: 'Hi! I\'m your EcoWell AI assistant. Ask me about water quality, recent trends, or request a summary.' }
+  { role: 'assistant', content: 'Hi! I\'m your BinLink AI assistant. Ask me about bin fill levels, status, or get a quick summary.' }
   ]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -680,7 +741,7 @@ function AIChat() {
         </div>
   <div className="flex items-center gap-2 pt-2 border-t border-transparent dark:border-transparent mt-0 bg-transparent dark:bg-transparent rounded-none">
           <Input
-            placeholder={streaming ? 'Streaming... press Stop' : 'Ask about pH, TDS, temp...'}
+            placeholder={streaming ? 'Streaming... press Stop' : 'Ask about fill %, status, location...'}
             value={input}
             disabled={streaming}
             onChange={(e) => setInput(e.target.value)}

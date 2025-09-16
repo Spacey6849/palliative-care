@@ -2,20 +2,23 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 
 export default function ForgotPasswordPage() {
   const [id, setId] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = (resolvedTheme || theme) === 'dark';
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
       <main className="min-h-screen px-4 sm:px-5 pb-10 sm:pb-14 flex flex-col items-center justify-center">
-        <section className="relative w-full max-w-md mx-auto backdrop-blur-xl rounded-3xl border px-5 py-7 sm:px-9 sm:py-9 overflow-hidden shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] border-white/15 bg-white/10">
+        <section className={`relative w-full max-w-md mx-auto backdrop-blur-xl rounded-3xl border px-5 py-7 sm:px-9 sm:py-9 overflow-hidden shadow-[0_8px_42px_-6px_rgba(0,0,0,0.35)] ${isDark ? 'border-gray-700/60 bg-gray-900/80' : 'border-gray-200 bg-white/85'}`}>
           <header className="relative mb-6 text-center">
-            <h1 className="text-2xl font-bold">Reset Your Password</h1>
-            <p className="mt-2 text-sm text-white/70">Enter your email or username and we’ll send a reset link if it matches an account.</p>
+            <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Reset Your Password</h1>
+            <p className={`mt-2 text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Enter your email or username and we’ll send a reset link if it matches an account.</p>
           </header>
           <form
             onSubmit={async (e) => {
@@ -44,15 +47,15 @@ export default function ForgotPasswordPage() {
             className="space-y-5"
           >
             <div>
-              <label htmlFor="identifier" className="block text-[13px] font-medium text-white/75 mb-1.5">Email or Username</label>
-              <input id="identifier" type="text" required placeholder="you@example.com or username" className="block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition bg-white/10 border border-white/25 focus:border-blue-400/70 placeholder-white/40" value={id} onChange={(e)=>setId(e.target.value)} />
+              <label htmlFor="identifier" className={`block text-[13px] font-medium mb-1.5 ${isDark ? 'text-gray-200' : 'text-gray-600'}`}>Email or Username</label>
+              <input id="identifier" type="text" required placeholder="you@example.com or username" className={`block w-full rounded-xl focus:ring-0 text-sm px-4 py-3 outline-none transition ${isDark ? 'bg-gray-800/60 border border-gray-700 focus:border-blue-400/70 placeholder-gray-400 text-gray-100' : 'bg-white border border-gray-300 focus:border-blue-500/60 placeholder-gray-400 text-gray-800'}`} value={id} onChange={(e)=>setId(e.target.value)} />
             </div>
-            {msg && <p className="text-[12px] text-white/80">{msg}</p>}
+            {msg && <p className={`text-[12px] ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>{msg}</p>}
             <div className="flex items-center gap-3">
-              <button disabled={busy} type="submit" className="inline-flex justify-center items-center rounded-xl px-5 py-3 text-sm font-medium disabled:opacity-50 bg-blue-600 hover:bg-blue-500 text-white">
+              <button disabled={busy} type="submit" className={`inline-flex justify-center items-center rounded-xl px-5 py-3 text-sm font-medium disabled:opacity-50 text-white ${isDark ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
                 {busy ? 'Sending…' : 'Send reset link'}
               </button>
-              <button type="button" onClick={()=>router.push('/auth?mode=login')} className="text-sm underline text-white/80 hover:text-white">Back to login</button>
+              <button type="button" onClick={()=>router.push('/auth?mode=login')} className={`text-sm underline ${isDark ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:text-blue-500'}`}>Back to login</button>
             </div>
           </form>
         </section>

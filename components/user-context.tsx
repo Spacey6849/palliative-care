@@ -1,9 +1,9 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-// Supabase removed; using custom minimal user type from MySQL session lookup
-interface BasicUser { id: string; email: string; username: string; full_name?: string | null; phone?: string | null; panchayat_name?: string | null; location?: string | null; created_at?: string; }
+// Minimal user shape received from /api/me
+interface BasicUser { id: string; email: string; username: string; full_name?: string | null; phone?: string | null; location?: string | null; created_at?: string; }
 
-type UserRole = 'admin' | 'panchayat' | null;
+type UserRole = 'admin' | 'user' | null;
 interface UserContextValue {
   user: BasicUser | null;
   loading: boolean;
@@ -28,7 +28,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (!u) return null;
     const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || '';
     if (adminEmail && u.email === adminEmail) return 'admin';
-    return 'panchayat';
+    return 'user';
   };
 
   const refresh = async () => {

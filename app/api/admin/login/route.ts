@@ -2,27 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomUUID, createHash } from 'crypto';
 import { getSupabase } from '@/lib/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 
 function token(): string {
   return createHash('sha256').update(randomUUID() + Date.now().toString()).digest('hex');
 }
 
+// Helpers similar to user login route
+const stripQuotes = (v?: string | null) => (v || '').trim().replace(/^['"]|['"]$/g, '');
+const stripInlineComment = (v: string) => v.replace(/\s+#.*$/, '');
+
 export async function POST(req: NextRequest) {
   try {
-    let supabase;
-    try {
-      supabase = getSupabase();
-    } catch (e:any) {
-      return NextResponse.json({ error: e?.message || 'Supabase not configured' }, { status: 503 });
-    }
+    const env = process.env as Record<string, string | undefined>;
+    const url = stripQuotes(env['NEXT_PUBLIC_SUPABASE_URL'] || env['SUPABASE_URL']);
+    const serviceKey = stripInlineComment(stripQuotes(env['SUPABASE_SERVICE_ROLE_KEY']));
+    if (!url || !serviceKey) return NextResponse.json({ error: 'Server misconfigured: missing Supabase URL or service key' }, { status: 500 });
+    const adminClient = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     const { username, password } = await req.json();
     if (!username || !password) return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
 
     
-    const { data: admin, error } = await supabase
+    const ident = String(username).trim().toLowerCase();
+    const { data: admin, error } = await adminClient
       .from('admin_accounts')
       .select('id,password_hash')
-      .or(`username.eq.${username.toLowerCase()},email.eq.${username.toLowerCase()}`)
+      .or(`username.eq.${ident},email.eq.${ident}`)
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -33,19 +38,23 @@ export async function POST(req: NextRequest) {
 
     const t = token();
     const expires = new Date(Date.now() + 1000 * 60 * 60 * 12);
-    const { error: sessErr } = await supabase
-      .from('sessions')
-      .insert({ id: randomUUID(), user_id: (admin as any).id, token: t, expires_at: expires.toISOString() });
+    // Store admin sessions separately to avoid FK constraint on sessions.user_id -> users.id
+    const { error: sessErr } = await adminClient
+      .from('admin_sessions')
+      .insert({ id: randomUUID(), admin_id: (admin as any).id, token: t, expires_at: expires.toISOString() });
     if (sessErr) throw sessErr;
 
     const res = NextResponse.json({ ok: true, admin: true });
-    res.cookies.set('ecw_admin_session', t, {
+    // Unify session cookie so the rest of the app recognizes admin as well
+    res.cookies.set('bl_session', t, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       expires
     });
+    // Clear old cookie if present
+    res.cookies.set('ecw_admin_session', '', { path: '/', maxAge: 0 });
     return res;
   } catch (e) {
     console.error('Admin login error', e);

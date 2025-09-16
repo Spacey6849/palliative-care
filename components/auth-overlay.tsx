@@ -50,7 +50,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
       <AnimatePresence>
         {open && (
           <motion.div
-            className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 pt-20 sm:pt-4 overflow-y-auto"
+            className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 pt-20 sm:pt-4 overflow-y-auto aichat-scroll"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -70,7 +70,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 25, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-              className={`relative w-full ${mode==='signup' ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto rounded-3xl backdrop-blur-2xl shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] px-7 py-8 sm:px-10 sm:py-10 border ${isDark ? 'border-white/20 bg-white/12 text-white' : 'border-gray-200 bg-white/85 text-gray-800'} `}
+              className={`relative w-full ${mode==='signup' ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto aichat-scroll rounded-3xl backdrop-blur-2xl shadow-[0_8px_42px_-6px_rgba(0,0,0,0.55)] px-7 py-8 sm:px-10 sm:py-10 border ${isDark ? 'border-white/20 bg-white/12 text-white' : 'border-gray-200 bg-white/85 text-gray-800'} `}
               role="dialog"
               aria-modal="true"
               aria-label={mode === 'login' ? 'Login form' : 'Signup form'}

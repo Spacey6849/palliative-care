@@ -4,8 +4,13 @@ export interface BinData {
   label?: string; // location label / area
   location: { lat: number; lng: number };
   bin_type?: 'private' | 'public' | string | null;
+  // Latest metrics from bin_metrics
+  fill_pct?: number | null;
+  is_open?: boolean | null;
+  updated_at?: Date; // when metrics were recorded (or last seen)
+  // Legacy/demo data (kept for fallback in offline/guest mode)
   data: {
-    tds: number; // used as a proxy to compute Fill % in current UI
+    tds?: number; // optional; only used to derive Fill % when real metrics absent
     lastUpdated: Date;
     ph?: number;
     temperature?: number;

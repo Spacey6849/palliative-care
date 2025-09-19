@@ -62,7 +62,7 @@ export default function MapsPage() {
             const fill = typeof row.fill_pct === 'number' ? Math.max(0, Math.min(100, Number(row.fill_pct))) : null;
             const tds = fill == null ? 360 : 200 + (fill / 100) * 600;
             const offline = (row.status || '').toLowerCase() === 'offline';
-            const isOpen = typeof row.is_open === 'boolean' ? row.is_open : false;
+            const isOpen = typeof row.is_open === 'boolean' ? row.is_open : null;
             const inferredStatus: BinData['status'] = offline ? 'offline' : (fill != null && fill >= 95 ? 'critical' : (isOpen ? 'warning' : 'active'));
             return {
               id: row.id,
@@ -70,9 +70,12 @@ export default function MapsPage() {
               label: row.label || undefined,
               bin_type: row.bin_type || null,
               location: { lat: Number(row.location?.lat ?? row.lat), lng: Number(row.location?.lng ?? row.lng) },
+              fill_pct: fill,
+              is_open: isOpen,
+              updated_at: row.updated_at ? new Date(row.updated_at) : undefined,
               status: inferredStatus,
               data: {
-                tds: tds,
+                tds: fill == null ? tds : undefined,
                 lastUpdated: row.updated_at ? new Date(row.updated_at) : new Date(),
               },
               history: [],

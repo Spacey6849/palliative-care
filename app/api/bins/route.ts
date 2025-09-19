@@ -43,7 +43,7 @@ export async function GET() {
     if (error) throw error;
 
     const ids = (rows || []).map(r => r.id);
-    // Get latest metric per bin
+    // Get latest metric per bin by id first
     const latestById: Record<string, any> = {};
     if (ids.length) {
       const { data: metrics } = await supabase
@@ -52,6 +52,23 @@ export async function GET() {
         .in('bin_id', ids)
         .order('recorded_at', { ascending: false });
       for (const m of metrics || []) if (!latestById[m.bin_id]) latestById[m.bin_id] = m;
+    }
+    // Fallback: for any bins without metrics by id, try by bin_name
+    const missingNameMap: Record<string, string> = {};
+    const missingNames: string[] = [];
+    for (const r of rows || []) {
+      if (!latestById[r.id] && r.name) { missingNames.push(r.name); missingNameMap[r.name] = r.id; }
+    }
+    if (missingNames.length) {
+      const { data: byName } = await supabase
+        .from('bin_metrics')
+        .select('bin_id, bin_name, recorded_at, fill_pct, is_open')
+        .in('bin_name', missingNames)
+        .order('recorded_at', { ascending: false });
+      for (const m of byName || []) {
+        const targetId = missingNameMap[m.bin_name as string];
+        if (targetId && !latestById[targetId]) latestById[targetId] = m;
+      }
     }
 
     const bins = (rows || []).map((b: any) => {

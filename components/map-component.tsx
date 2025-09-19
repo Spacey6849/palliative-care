@@ -126,8 +126,10 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
           key={bin.id}
           position={[bin.location.lat, bin.location.lng]}
           icon={(() => {
-            const tds = Number(bin.data.tds);
-            const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+            const pctFromMetrics = typeof bin.fill_pct === 'number' ? Math.round(Math.max(0, Math.min(100, bin.fill_pct))) : null;
+            const tds = Number(bin.data?.tds ?? NaN);
+            const pctFromDemo = isFinite(tds) ? Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100))) : null;
+            const pct = pctFromMetrics ?? (pctFromDemo ?? 0);
             const effectiveStatus: BinData['status'] = pct >= 95 ? 'critical' : bin.status;
             return createCustomIcon(effectiveStatus, highlightedBinIds.includes(bin.id));
           })()}
@@ -150,17 +152,19 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
                   <div className="flex justify-between"><span className="text-muted-foreground">Bin Type</span><span className="font-medium text-foreground text-right">{String(bin.bin_type).toUpperCase()}</span></div>
                 )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Bin Level</span><span className="font-medium text-foreground text-right">{(() => {
-                  const tds = Number(bin.data.tds);
-                  const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+                  const pct = typeof bin.fill_pct === 'number'
+                    ? Math.round(Math.max(0, Math.min(100, bin.fill_pct)))
+                    : (() => { const t = Number(bin.data?.tds ?? NaN); return isFinite(t) ? Math.round(Math.max(0, Math.min(100, ((t - 200) / (800 - 200)) * 100))) : 0; })();
                   return isFinite(pct) ? pct : 0;
                 })()}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-medium text-foreground text-right">{bin.status === 'offline' ? 'Offline' : 'Online'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Bin Lid</span><span className="font-medium text-foreground text-right">{bin.status === 'offline' ? '—' : (bin.status === 'active' ? 'Closed' : 'Open')}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Bin Lid</span><span className="font-medium text-foreground text-right">{bin.status === 'offline' ? '—' : (typeof bin.is_open === 'boolean' ? (bin.is_open ? 'Open' : 'Closed') : (bin.status === 'active' ? 'Closed' : 'Open'))}</span></div>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Updated {bin.data.lastUpdated.toLocaleTimeString()}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Updated {(bin.updated_at ?? bin.data.lastUpdated).toLocaleTimeString()}</p>
               {(() => {
-                const tds = Number(bin.data.tds);
-                const pct = Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100)));
+                const pct = typeof bin.fill_pct === 'number'
+                  ? Math.round(Math.max(0, Math.min(100, bin.fill_pct)))
+                  : (() => { const t = Number(bin.data?.tds ?? NaN); return isFinite(t) ? Math.round(Math.max(0, Math.min(100, ((t - 200) / (800 - 200)) * 100))) : 0; })();
                 if (pct >= 95) {
                   return <p className="text-[10px] text-red-500 font-medium">Bin is Full!</p>;
                 }

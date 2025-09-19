@@ -231,15 +231,16 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                         <CardHeader className="pb-1">
                           <CardTitle className="text-base font-semibold tracking-tight">{selectedBin.name}</CardTitle>
                           <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Last updated: {selectedBin.data.lastUpdated.toLocaleTimeString()}
+                            Last updated: {(selectedBin.updated_at ?? selectedBin.data.lastUpdated).toLocaleTimeString()}
                           </p>
                         </CardHeader>
                         <CardContent className="space-y-3 pt-2">
                           <div className="grid grid-cols-2 gap-2.5">
                             {(() => {
-                              // Temporary Fill % derived from TDS (200-800ppm -> 0-100%)
-                              const tds = Number(selectedBin.data.tds);
-                              const pct = Math.max(0, Math.min(100, Math.round(((tds - 200) / 600) * 100)));
+                              // Prefer real fill_pct; fallback to derived tds mapping
+                              const pct = typeof selectedBin.fill_pct === 'number'
+                                ? Math.max(0, Math.min(100, Math.round(selectedBin.fill_pct)))
+                                : (() => { const tds = Number(selectedBin.data?.tds ?? NaN); return isFinite(tds) ? Math.max(0, Math.min(100, Math.round(((tds - 200) / 600) * 100))) : 0; })();
                               return (
                                 <MetricCard
                                   label="Bin Level"
@@ -253,10 +254,10 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                               );
                             })()}
                             {(() => {
-                              const isClosed = selectedBin.status === 'active';
                               const isOffline = selectedBin.status === 'offline';
-                              const value = isOffline ? 'Offline' : (isClosed ? 'Closed' : 'Open');
-                              const s = isOffline ? 'warning' : isClosed ? 'good' : 'critical';
+                              const isOpen = typeof selectedBin.is_open === 'boolean' ? selectedBin.is_open : (selectedBin.status !== 'active');
+                              const value = isOffline ? 'Offline' : (isOpen ? 'Open' : 'Closed');
+                              const s = isOffline ? 'warning' : (isOpen ? 'critical' : 'good');
                               return (
                                 <MetricCard
                                   label="Status"
@@ -406,10 +407,15 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                     </CardHeader>
                     <CardContent className="pt-1">
                       {(() => {
-                        const data = bins.map((w: BinData) => ({
-                          name: w.name.length > 10 ? w.name.slice(0, 10) + '…' : w.name,
-                          level: Math.max(0, Math.min(100, Math.round(((Number(w.data.tds) - 200) / 600) * 100)))
-                        }));
+                        const data = bins.map((w: BinData) => {
+                          const level = typeof w.fill_pct === 'number'
+                            ? Math.max(0, Math.min(100, Math.round(w.fill_pct)))
+                            : (() => { const t = Number(w.data?.tds ?? NaN); return isFinite(t) ? Math.max(0, Math.min(100, Math.round(((t - 200) / 600) * 100))) : 0; })();
+                          return {
+                            name: w.name.length > 10 ? w.name.slice(0, 10) + '…' : w.name,
+                            level
+                          };
+                        });
                         return (
                           <div className="h-48">
                             <ChartContainer config={{ level: { label: 'Level', color: 'hsl(142 72% 29%)' } }}>

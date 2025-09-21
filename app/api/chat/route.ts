@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Build bins + latest metric snapshot. Admin: all bins. User: own bins.
+  // Build bins + latest metric snapshot. Admin: all bins. User: own bins.
     let bins: any[] = [];
     if (adminId) {
       const { data } = await supabase
@@ -66,9 +66,15 @@ export async function POST(req: NextRequest) {
       bins = (data || []).map((b: any) => ({ ...b, ...b.users }));
     }
 
-    // Get latest metrics per bin (limit recent rows then reduce in JS for portability across DB versions)
+    // Extract potential bin names from user message for targeted queries
+    const mentionText = (lastUser || '').toLowerCase();
+    const allNames = bins.map(b => String(b.name || '').trim()).filter(Boolean);
+    const matchedNames = allNames.filter(n => mentionText.includes(n.toLowerCase()));
+
+    // Get latest metrics per bin (by id) and also by bin_name as fallback
     const binIds = bins.map(b => b.id);
     let latestByBin: Record<string, any> = {};
+    let latestByName: Record<string, any> = {};
     if (binIds.length) {
       const { data: metricRows } = await supabase
         .from('bin_metrics')
@@ -77,31 +83,48 @@ export async function POST(req: NextRequest) {
         .order('recorded_at', { ascending: false })
         .limit(1000);
       for (const row of (metricRows || []) as any[]) {
-        if (!latestByBin[row.bin_id]) latestByBin[row.bin_id] = row; // first is latest due to DESC
+        if (row?.bin_id && !latestByBin[row.bin_id]) latestByBin[row.bin_id] = row; // first is latest due to DESC
+      }
+    }
+    // Name-based fallback: query for all names (or at least matched) to cover rows missing bin_id
+    const namesToQuery = matchedNames.length ? matchedNames : allNames;
+    if (namesToQuery.length) {
+      const { data: nameRows } = await supabase
+        .from('bin_metrics')
+        .select('id, bin_id, fill_pct, is_open, recorded_at, bin_name')
+        .in('bin_name', namesToQuery)
+        .order('recorded_at', { ascending: false })
+        .limit(1000);
+      for (const row of (nameRows || []) as any[]) {
+        const key = (row?.bin_name || '').trim();
+        if (key && !latestByName[key]) latestByName[key] = row;
       }
     }
 
     // Build a concise bin snapshot only if the user asks about bins/metrics
   // Include legacy term 'well' as an alias so older phrasing still pulls bin context
   const needsBinContext = /bin|fill|lid|open|status|location|well/i.test(lastUser || '') && bins.length;
+    
+    // Determine if the user asked about a specific bin by name
+    const askedForAll = /(all\s+bins|every\s+bin|other\s+bins|others|compare\s+bins|list\s+bins)/i.test(lastUser);
+    const matchedBins = bins.filter(b => matchedNames.includes(String(b.name || '')));
     let structuredBlock = '';
     if (needsBinContext) {
       const sections: string[] = [];
-      for (const b of bins) {
-        const m = latestByBin[b.id];
+      const targetBins = matchedBins.length && !askedForAll ? matchedBins : bins;
+      for (const b of targetBins) {
+        const m = latestByBin[b.id] || latestByName[String(b.name || '').trim()];
         const binName = b.name || 'Unknown Bin';
-        if (!m) { sections.push(`${binName}\n(No data)`); continue; }
         const location = b.location_label || (typeof b.location === 'string' ? b.location : `${b.lat ?? '—'}, ${b.lng ?? '—'}`);
-        const fill = m.fill_pct != null ? Math.max(0, Math.min(100, Number(m.fill_pct))) : null;
-        const lidState = m.is_open == null ? '—' : (m.is_open ? 'OPEN' : 'CLOSED');
-        const updated = m.recorded_at || '—';
+        const fill = m?.fill_pct != null ? Math.max(0, Math.min(100, Number(m.fill_pct))) : null;
+        const lidState = m?.is_open == null ? 'N/A' : (m.is_open ? 'Open' : 'Closed');
+        const statusNorm = (String(b.status || '').toLowerCase() === 'offline') ? 'Offline' : 'Online';
         const section = [
           `Bin Name: ${binName}`,
-          `Location: ${location || '—'}`,
-          `Status: ${b.status || '—'}`,
-          `Fill %: ${fill == null ? '—' : String(Math.round(fill)) + '%'}`,
-          `Lid: ${lidState}`,
-          `Updated: ${updated}`,
+          `Bin Lid: ${lidState}`,
+          `Bin Fill %: ${fill == null ? 'N/A' : String(Math.round(fill)) + '%'}`,
+          `Status: ${statusNorm}`,
+          `Bin Location: ${location || 'N/A'}`,
         ].join('\n');
         sections.push(section);
       }
@@ -159,8 +182,8 @@ export async function POST(req: NextRequest) {
         return new Response('All Gemini model candidates failed to init: ' + (lastErr?.message || 'unknown'), { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       }
       const systemPreamble = adminId
-        ? 'You are BinLink, an admin smart-bin assistant. Respond concisely. If bins are mentioned, reference only the provided structured snapshot lines (verbatim) before analysis. ALWAYS format any metrics with one per line using labels: Fill %:, Status:, Location:. If the user asks which bin is critical, prioritize highest Fill % and OPEN status; clearly label the critical bins.'
-        : 'You are BinLink, a smart-bin assistant. Respond directly without an opening greeting. ALWAYS format metrics with one per line using labels: Fill %:, Status:, Location:. When the user asks for critical bins, prioritize highest Fill % and OPEN status. Provide a short ordered list of bins from most to least urgent with reasons.';
+        ? 'You are BinLink, an admin smart-bin assistant. Respond concisely. If bins are mentioned, reference only the provided structured snapshot lines (verbatim) before analysis. Unless the user explicitly asks for other or all bins, answer ONLY about the specific bin they named. ALWAYS format any metrics with one per line using exactly these labels: Bin Lid:, Bin Fill %:, Status:, Bin Location:. If the user asks which bin is critical, prioritize highest Fill % and OPEN status; clearly label the critical bins.'
+        : 'You are BinLink, a smart-bin assistant. Respond directly without an opening greeting. Unless the user explicitly asks for other or all bins, answer ONLY about the specific bin they named. ALWAYS format metrics with one per line using exactly these labels: Bin Lid:, Bin Fill %:, Status:, Bin Location:. When the user asks for critical bins, prioritize highest Fill % and OPEN status. Provide a short ordered list from most to least urgent with reasons.';
       const convoLines = messages.slice(-25).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`);
   const debugFlag = url.searchParams.get('debug') === '1';
   const prompt = [
@@ -216,6 +239,24 @@ export async function POST(req: NextRequest) {
           lines.push('Critical criteria: Fill ≥95% and/or Lid OPEN.');
           answer = lines.join('\n');
         }
+        const formatted = neatFormat(answer);
+        if (insertedUserMessageId) {
+          await supabase.from('chat_messages').update({ response: formatted }).eq('id', insertedUserMessageId);
+        } else {
+          await insertChatMessage(supabase, 'assistant', formatted, userId, adminId, null);
+        }
+        return new Response(formatted, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      }
+
+      // Deterministic direct answer when a single bin is requested
+      if (matchedBins.length === 1 && !askedForAll) {
+        const b = matchedBins[0];
+        const m = latestByBin[b.id] || latestByName[String(b.name || '').trim()];
+        const location = b.location_label || (typeof b.location === 'string' ? b.location : `${b.lat ?? '—'}, ${b.lng ?? '—'}`);
+        const lid = m?.is_open == null ? 'N/A' : (m.is_open ? 'Open' : 'Closed');
+        const fill = m?.fill_pct != null ? String(Math.round(Number(m.fill_pct))) + '%' : 'N/A';
+        const statusNorm = (String(b.status || '').toLowerCase() === 'offline') ? 'Offline' : 'Online';
+        const answer = [`Bin Lid: ${lid}`, `Bin Fill %: ${fill}`, `Status: ${statusNorm}`, `Bin Location: ${location || 'N/A'}`].join('\n');
         const formatted = neatFormat(answer);
         if (insertedUserMessageId) {
           await supabase.from('chat_messages').update({ response: formatted }).eq('id', insertedUserMessageId);
@@ -379,7 +420,7 @@ async function getSessionColumns(): Promise<Set<string>> { return new Set(); }
 function neatFormat(text: string): string {
   if (!text) return text;
   // Insert newline before metric labels if not already at line start
-  const pattern = /(\s+)(TDS:|Temp:|Temperature:|Water Level:|pH Level:|pH:)/g;
+  const pattern = /(\s+)(TDS:|Temp:|Temperature:|Water Level:|pH Level:|pH:|Bin Lid:|Bin Fill %:|Status:|Bin Location:)/g;
   let out = text.replace(pattern, '\n$2');
   // Collapse extra spaces around newlines
   out = out.replace(/\n{2,}/g, '\n\n');

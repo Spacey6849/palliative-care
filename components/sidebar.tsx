@@ -42,6 +42,7 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from 'recharts';
+import { getSupabase } from '@/lib/supabase/client';
 
 interface SidebarProps {
   bins: BinData[];
@@ -56,6 +57,8 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChart, setActiveChart] = useState<'ph' | 'tds' | 'temperature' | 'waterLevel'>('ph');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [trendData, setTrendData] = useState<{ time: string; fill: number }[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
 
   const filteredBins = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -76,6 +79,56 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
     setSearchQuery(bin.name);
     setShowSuggestions(false);
   };
+
+  // Load today's fill trend for the selected bin from bin_metrics
+  useEffect(() => {
+    (async () => {
+      if (!selectedBin) { setTrendData([]); return; }
+      setTrendLoading(true);
+      const sb = getSupabase();
+      try {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const startIso = start.toISOString();
+
+        // First try by bin_id
+        let rows: any[] = [];
+        if (selectedBin.id) {
+          const { data } = await sb
+            .from('bin_metrics')
+            .select('recorded_at, fill_pct, is_open')
+            .eq('bin_id', selectedBin.id)
+            .gte('recorded_at', startIso)
+            .order('recorded_at', { ascending: true });
+          rows = data || [];
+        }
+        // Fallback by bin_name if needed
+        if ((!rows || rows.length === 0) && selectedBin.name) {
+          const { data } = await sb
+            .from('bin_metrics')
+            .select('recorded_at, fill_pct, is_open')
+            .eq('bin_name', selectedBin.name)
+            .gte('recorded_at', startIso)
+            .order('recorded_at', { ascending: true });
+          rows = data || [];
+        }
+
+        const points = (rows || [])
+          .filter(r => typeof r.fill_pct === 'number' && isFinite(Number(r.fill_pct)))
+          .map(r => {
+            const d = new Date(r.recorded_at);
+            const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const v = Math.max(0, Math.min(100, Math.round(Number(r.fill_pct))));
+            return { time: label, fill: v };
+          });
+        setTrendData(points);
+      } catch {
+        setTrendData([]);
+      } finally {
+        setTrendLoading(false);
+      }
+    })();
+  }, [selectedBin]);
 
   const getMetricStatus = (value: number, type: 'ph' | 'tds' | 'temperature' | 'waterLevel') => {
     switch (type) {
@@ -274,13 +327,32 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                           </div>
                         </CardContent>
                       </Card>
-                      {/* Trend Section Placeholder (to be implemented for bins) */}
+                      {/* Trend Section: Fill % today for selected bin */}
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                         <CardHeader className="pb-2">
                           <CardTitle className="text-base font-semibold tracking-tight">Trends</CardTitle>
                         </CardHeader>
-                        <CardContent className="pt-1 pb-3 text-sm text-gray-600 dark:text-gray-400">
-                          Fill level trends coming soon.
+                        <CardContent className="pt-1 pb-3">
+                          {trendLoading ? (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading todays fill trend…</div>
+                          ) : trendData.length ? (
+                            <div className="h-40">
+                              <ChartContainer config={{ fill: { label: 'Fill %', color: 'hsl(142 72% 29%)' } }}>
+                                <ResponsiveContainer>
+                                  <LineChart data={trendData} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                                    <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                                    <Line type="monotone" dataKey="fill" stroke="var(--color-fill)" strokeWidth={2} dot={false} />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <ChartLegend content={<ChartLegendContent />} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </ChartContainer>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-600 dark:text-gray-400">No metrics for today.</div>
+                          )}
                         </CardContent>
                       </Card>
                     </>
@@ -307,8 +379,16 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                               <div className="flex items-center justify-between w-full">
                                 <div className="text-left">
                                   <p className="font-medium truncate leading-tight">{bin.name}</p>
-                                  <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
-                                    {(() => { const pct = Math.max(0, Math.min(100, Math.round(((Number(bin.data.tds) - 200) / 600) * 100))); return `Level ${pct}%`; })()} • {bin.status === 'offline' ? 'Offline' : 'Online'} • Lid {bin.status === 'offline' ? '—' : (bin.status === 'active' ? 'Closed' : 'Open')}
+                                  <p className="text-[11px] text-emerald-600 dark:text-emerald-300 leading-snug">
+                                    {(() => {
+                                      const pct = typeof bin.fill_pct === 'number'
+                                        ? Math.max(0, Math.min(100, Math.round(Number(bin.fill_pct))))
+                                        : (() => { const t = Number(bin.data?.tds ?? NaN); return isFinite(t) ? Math.max(0, Math.min(100, Math.round(((t - 200) / 600) * 100))) : null; })();
+                                      const pctText = pct == null ? 'N/A' : `${pct}%`;
+                                      const lid = typeof bin.is_open === 'boolean' ? (bin.is_open ? 'Open' : 'Closed') : (bin.status === 'offline' ? '—' : 'Unknown');
+                                      const statusText = bin.status === 'offline' ? 'Offline' : 'Online';
+                                      return `Level ${pctText} • ${statusText} • Lid ${lid}`;
+                                    })()}
                                   </p>
                                 </div>
                                 <div className={`w-3 h-3 rounded-full ${

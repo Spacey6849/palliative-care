@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/sidebar';
 import { BinData } from '@/lib/bin-data';
 import { motion } from 'framer-motion';
 import { useUser } from '@/components/user-context';
+import { getSupabase } from '@/lib/supabase/client';
 
 const MapComponent = dynamic(
   () => import('@/components/map-component').then(mod => mod.MapComponent),
@@ -17,6 +18,7 @@ export default function MapsPage() {
   const [selectedBin, setSelectedBin] = useState<BinData | undefined>();
   const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
   const { user, role } = useUser();
+  const supabase = getSupabase();
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +95,90 @@ export default function MapsPage() {
   }, [user?.id, role]);
 
   // Removed demo jitter updates
+
+  // Realtime soft updates: merge incoming bin_metrics into state (no full reload)
+  useEffect(() => {
+    if (!user) return; // only subscribe for authenticated users fetching real bins
+
+    const channel = supabase
+      .channel('public:bin_metrics')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bin_metrics' },
+        (payload: any) => {
+          const rec = payload?.new ?? payload?.record ?? payload;
+          if (!rec) return;
+
+          const fill = typeof rec.fill_pct === 'number' ? Math.max(0, Math.min(100, Number(rec.fill_pct))) : null;
+          const isOpen = typeof rec.is_open === 'boolean' ? rec.is_open : undefined;
+          const updatedAt: Date | undefined = rec.recorded_at
+            ? new Date(rec.recorded_at)
+            : rec.updated_at
+            ? new Date(rec.updated_at)
+            : undefined;
+
+          // Update list of bins
+          setBins((prev) =>
+            prev.map((b) => {
+              const match = (b.id && rec.bin_id && b.id === rec.bin_id) || (b.name && rec.bin_name && b.name === rec.bin_name);
+              if (!match) return b;
+              const nextFill = fill ?? b.fill_pct ?? null;
+              const nextIsOpen = typeof isOpen === 'boolean' ? isOpen : (typeof b.is_open === 'boolean' ? b.is_open : null);
+              const nextStatus: BinData['status'] = b.status === 'offline'
+                ? 'offline'
+                : (nextFill != null && nextFill >= 95)
+                ? 'critical'
+                : (nextIsOpen ? 'warning' : 'active');
+              return {
+                ...b,
+                fill_pct: nextFill ?? undefined,
+                is_open: typeof nextIsOpen === 'boolean' ? nextIsOpen : undefined,
+                updated_at: updatedAt ?? b.updated_at,
+                status: nextStatus,
+                // Keep legacy data.tds only if there is no fill_pct; otherwise prefer live %
+                data: {
+                  ...b.data,
+                  tds: nextFill == null ? b.data?.tds : undefined,
+                  lastUpdated: updatedAt ?? b.data?.lastUpdated ?? new Date(),
+                },
+              } as BinData;
+            })
+          );
+
+          // Update selected bin card/popup if relevant
+          setSelectedBin((prev) => {
+            if (!prev) return prev;
+            const match = (prev.id && rec.bin_id && prev.id === rec.bin_id) || (prev.name && rec.bin_name && prev.name === rec.bin_name);
+            if (!match) return prev;
+            const nextFill = fill ?? prev.fill_pct ?? null;
+            const nextIsOpen = typeof isOpen === 'boolean' ? isOpen : (typeof prev.is_open === 'boolean' ? prev.is_open : null);
+            const nextStatus: BinData['status'] = prev.status === 'offline'
+              ? 'offline'
+              : (nextFill != null && nextFill >= 95)
+              ? 'critical'
+              : (nextIsOpen ? 'warning' : 'active');
+            return {
+              ...prev,
+              fill_pct: nextFill ?? undefined,
+              is_open: typeof nextIsOpen === 'boolean' ? nextIsOpen : undefined,
+              updated_at: updatedAt ?? prev.updated_at,
+              status: nextStatus,
+              data: {
+                ...prev.data,
+                tds: nextFill == null ? prev.data?.tds : undefined,
+                lastUpdated: updatedAt ?? prev.data?.lastUpdated ?? new Date(),
+              },
+            } as BinData;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   return (
     <div className="h-screen w-full overflow-hidden bg-gradient-to-br from-blue-50 via-white to-cyan-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 relative">

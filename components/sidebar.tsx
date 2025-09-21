@@ -62,6 +62,8 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [trendData, setTrendData] = useState<{ time: string; fill: number }[]>([]);
   const [trendLoading, setTrendLoading] = useState(false);
+  const [monthlyData, setMonthlyData] = useState<{ day: number; predicted: number }[]>([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<'all' | 'private' | 'public'>('all');
   const { role } = useUser();
   const [reportOpen, setReportOpen] = useState(false);
@@ -94,6 +96,25 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
     setSearchQuery(bin.name);
     setShowSuggestions(false);
   };
+
+  // Allow map popup to request opening the report dialog
+  useEffect(() => {
+    const handler = (e: any) => {
+      const d = e?.detail;
+      if (!d || !d.id || !d.name) return;
+      setReportBin({ id: d.id, name: d.name, fill: d.fill, is_open: d.is_open });
+      setReportNote('');
+      setReportOpen(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('bl:openReport' as any, handler as any);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('bl:openReport' as any, handler as any);
+      }
+    };
+  }, []);
 
   // Auto email report for thresholds (admin only). Use simple once-per-day gating via localStorage
   useEffect(() => {
@@ -168,6 +189,80 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
       }
     })();
   }, [selectedBin]);
+
+  // AI Predictive Fill (Monthly): derive from bin_metrics across filtered bins
+  useEffect(() => {
+    (async () => {
+      try {
+        setMonthlyLoading(true);
+        const sb = getSupabase();
+        // Look back 30 days for bins in the filtered list
+        const since = new Date();
+        since.setDate(since.getDate() - 30);
+        const sinceIso = since.toISOString();
+        const names = filteredBins.map(b => b.name).filter(Boolean);
+        const ids = filteredBins.map(b => b.id).filter(Boolean);
+        let rows: any[] = [];
+        if (ids.length) {
+          const { data } = await sb
+            .from('bin_metrics')
+            .select('bin_id, bin_name, recorded_at, fill_pct')
+            .in('bin_id', ids as any)
+            .gte('recorded_at', sinceIso)
+            .order('recorded_at', { ascending: true });
+          rows = data || [];
+        }
+        // Fallback by name where id metrics missing
+        if (names.length) {
+          const { data } = await sb
+            .from('bin_metrics')
+            .select('bin_id, bin_name, recorded_at, fill_pct')
+            .in('bin_name', names as any)
+            .gte('recorded_at', sinceIso)
+            .order('recorded_at', { ascending: true });
+          rows = [...rows, ...(data || [])];
+        }
+
+        // Bucket by day, take latest per bin per day, then average across bins
+        const byDay: Record<string, { sum: number; count: number }> = {};
+        const seenPerBinDay = new Set<string>();
+        for (const r of rows) {
+          if (typeof r.fill_pct !== 'number') continue;
+          const d = new Date(r.recorded_at);
+          const keyDay = d.toISOString().slice(0, 10);
+          const key = `${r.bin_id || r.bin_name}::${keyDay}`;
+          if (seenPerBinDay.has(key)) continue; // earliest only to prevent double-counting per bin/day
+          seenPerBinDay.add(key);
+          const pct = Math.max(0, Math.min(100, Math.round(Number(r.fill_pct))));
+          byDay[keyDay] = byDay[keyDay] || { sum: 0, count: 0 };
+          byDay[keyDay].sum += pct;
+          byDay[keyDay].count += 1;
+        }
+
+        // Build an array for days 1..30 using today as reference; predict forward by simple carry + slight trend
+        const today = new Date();
+        const days: { day: number; predicted: number }[] = [];
+        let last = 0;
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          const keyDay = d.toISOString().slice(0, 10);
+          const avg = byDay[keyDay]?.count ? Math.round(byDay[keyDay].sum / byDay[keyDay].count) : last;
+          last = avg;
+          days.push({ day: d.getDate(), predicted: avg });
+        }
+        // Light smoothing: moving average
+        const smooth = (arr: number[]) => arr.map((v, i, a) => Math.round((a[Math.max(0, i-1)] ?? v + v + (a[i+1] ?? v)) / (a[Math.max(0, i-1)] != null && a[i+1] != null ? 3 : 1)));
+        const smoothed = smooth(days.map(d => d.predicted));
+        const final = days.map((d, i) => ({ day: d.day, predicted: Math.max(0, Math.min(100, smoothed[i])) }));
+        setMonthlyData(final);
+      } catch {
+        setMonthlyData([]);
+      } finally {
+        setMonthlyLoading(false);
+      }
+    })();
+  }, [filteredBins]);
 
   const getMetricStatus = (value: number, type: 'ph' | 'tds' | 'temperature' | 'waterLevel') => {
     switch (type) {
@@ -424,8 +519,8 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                               className="w-full justify-start px-3 py-2 h-auto rounded-lg text-sm"
                               onClick={() => selectBin(bin)}
                             >
-                              <div className="flex items-center justify-between w-full">
-                                <div className="text-left">
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <div className="text-left min-w-0">
                                   <p className="font-medium truncate leading-tight">{bin.name}</p>
                                   <p className="text-[11px] text-emerald-600 dark:text-emerald-300 leading-snug">
                                     {(() => {
@@ -439,17 +534,21 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                                     })()}
                                   </p>
                                 </div>
-                                <div className={`w-3 h-3 rounded-full ${
+                                <div className={`w-3 h-3 rounded-full shrink-0 ${
                                   bin.status === 'active' ? 'bg-green-500' :
                                   bin.status === 'warning' ? 'bg-yellow-500' :
                                   bin.status === 'critical' ? 'bg-red-500' :
                                   'bg-gray-500'
                                 }`} />
                                 {role === 'admin' && (
-                                  <Button size="sm" variant="secondary" className="ml-2 h-7 text-[11px]"
+                                  <Button size="icon" variant="ghost" className="ml-1 h-8 w-8 shrink-0 hover:bg-muted/60 dark:hover:bg-muted/40"
+                                    title="Send report"
                                     onClick={(e) => { e.stopPropagation(); setReportBin({ id: bin.id, name: bin.name, fill: typeof bin.fill_pct==='number'?Math.round(bin.fill_pct):undefined, is_open: typeof bin.is_open==='boolean'?bin.is_open:undefined }); setReportNote(''); setReportOpen(true); }}
                                   >
-                                    Send report
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                                      <path d="M2.25 4.5A2.25 2.25 0 0 1 4.5 2.25h15a2.25 2.25 0 0 1 2.25 2.25v15a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 19.5v-15Z"/>
+                                      <path d="M7.5 8.25h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5Zm0 3h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5Zm0 3h6a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5Z" fill="#fff"/>
+                                    </svg>
                                   </Button>
                                 )}
                               </div>
@@ -501,38 +600,23 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                       <CardTitle className="text-base font-semibold tracking-tight">AI Predictive Fill (Monthly)</CardTitle>
                     </CardHeader>
                     <CardContent className="pt-1">
-                      {(() => {
-                        const days = Array.from({ length: 30 }, (_, i) => i + 1);
-                        // Build naive baseline: average current derived fill as base, add small variance
-                        const avgFill = bins.length
-                          ? Math.round(
-                              bins.reduce((s: number, w: BinData) => {
-                                const pct = Math.max(0, Math.min(100, Math.round(((Number(w.data.tds) - 200) / 600) * 100)));
-                                return s + pct;
-                              }, 0) / bins.length
-                            )
-                          : 0;
-                        const data = days.map((d) => ({
-                          day: d,
-                          predicted: Math.max(0, Math.min(100, Math.round(avgFill + Math.sin(d / 4) * 5 + (d * 0.6))))
-                        }));
-                        return (
-                          <div className="h-48">
-                            <ChartContainer config={{ predicted: { label: 'Predicted', color: 'hsl(200 98% 39%)' } }}>
-                              <ResponsiveContainer>
-                                <LineChart data={data} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
-                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                                  <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" strokeWidth={2} dot={false} />
-                                  <ChartTooltip content={<ChartTooltipContent />} />
-                                  <ChartLegend content={<ChartLegendContent />} />
-                                </LineChart>
-                              </ResponsiveContainer>
-                            </ChartContainer>
-                          </div>
-                        );
-                      })()}
+                      <div className="h-48">
+                        <ChartContainer config={{ predicted: { label: 'Predicted', color: 'hsl(200 98% 39%)' } }}>
+                          <ResponsiveContainer>
+                            <LineChart data={monthlyData} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                              <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                              <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" strokeWidth={2} dot={false} />
+                              <ChartTooltip content={<ChartTooltipContent />} />
+                              <ChartLegend content={<ChartLegendContent />} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </ChartContainer>
+                      </div>
+                      {monthlyLoading && (
+                        <div className="mt-1 text-[11px] text-muted-foreground">Loading…</div>
+                      )}
                     </CardContent>
                   </Card>
                   {/* Overall bins graph */}

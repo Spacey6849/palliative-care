@@ -78,6 +78,7 @@ export async function GET() {
       return {
         id: b.id,
         name: b.name,
+        bin_type: b.bin_type || null,
         label: b.location_label || null,
         owner_id: b.user_id,
         owner_email: b.users?.email || null,

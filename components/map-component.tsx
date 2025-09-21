@@ -6,6 +6,7 @@ import { Icon, LatLngExpression } from 'leaflet';
 import type { Map as LeafletMap } from 'leaflet';
 import type { Marker as LeafletMarker } from 'leaflet';
 import { ExternalLink } from 'lucide-react';
+import { useUser } from '@/components/user-context';
 import { BinData } from '@/lib/bin-data';
 import { useTheme } from 'next-themes';
 
@@ -32,6 +33,7 @@ interface MapComponentProps {
 }
 
 export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds = [] }: MapComponentProps) {
+  const { role } = useUser();
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const markerRefs = useState<Record<string, LeafletMarker | null>>({})[0];
@@ -139,7 +141,14 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
           <Popup className="bin-popup">
             <div className="p-3 min-w-[220px] space-y-2 font-sans rounded-lg">
               <div className="flex items-start justify-between gap-4">
-                <h3 className="font-semibold text-foreground leading-snug text-sm">{bin.name}</h3>
+                <h3 className="font-semibold text-foreground leading-snug text-sm flex items-center gap-2">
+                  <span>{bin.name}</span>
+                  {bin.bin_type && (
+                    <span className="px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/40">
+                      {String(bin.bin_type).toUpperCase()}
+                    </span>
+                  )}
+                </h3>
                 <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide backdrop-blur-sm ${
                   bin.status === 'active' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-400/30' :
                   (bin.status === 'warning' || bin.status === 'critical') ? 'bg-red-500/15 text-red-400 ring-1 ring-red-400/30' :
@@ -179,6 +188,21 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
                 <ExternalLink className="h-3.5 w-3.5 opacity-90 group-hover:opacity-100 transition-opacity" />
                 <span className="">Open in Google Maps</span>
               </a>
+              {role === 'admin' && (
+                <button
+                  type="button"
+                  className="mt-1 w-full text-[11px] px-3 py-1.5 rounded-lg bg-secondary/60 hover:bg-secondary/70 text-foreground border border-border/60"
+                  onClick={() => {
+                    try {
+                      // Dispatch a custom event to open Sidebar's send report dialog with this bin
+                      const ev = new CustomEvent('bl:openReport', { detail: { id: bin.id, name: bin.name, fill: typeof bin.fill_pct==='number'?Math.round(bin.fill_pct):undefined, is_open: typeof bin.is_open==='boolean'?bin.is_open:undefined } });
+                      window.dispatchEvent(ev);
+                    } catch {}
+                  }}
+                >
+                  Send report
+                </button>
+              )}
             </div>
           </Popup>
         </Marker>

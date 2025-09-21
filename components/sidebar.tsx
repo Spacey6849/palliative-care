@@ -22,11 +22,14 @@ import { ChevronLeft, Search, Gauge } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BinData } from '@/lib/bin-data';
 import { MetricCard } from './metric-card';
 // Bin chart component removed with wells cleanup
 import { ThemeToggle } from './theme-toggle';
+import { useUser } from '@/components/user-context';
 import {
   ChartContainer,
   ChartLegend,
@@ -59,11 +62,23 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [trendData, setTrendData] = useState<{ time: string; fill: number }[]>([]);
   const [trendLoading, setTrendLoading] = useState(false);
+  const [selectedType, setSelectedType] = useState<'all' | 'private' | 'public'>('all');
+  const { role } = useUser();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportBin, setReportBin] = useState<{ id: string; name: string; fill?: number; is_open?: boolean } | null>(null);
+  const [reportNote, setReportNote] = useState('');
 
   const filteredBins = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return bins.filter(bin => bin.name.toLowerCase().includes(q));
-  }, [bins, searchQuery]);
+    return bins.filter(bin => {
+      if (q && !bin.name.toLowerCase().includes(q)) return false;
+      if (selectedType !== 'all') {
+        const bt = (bin.bin_type || '').toString().toLowerCase();
+        if (bt !== selectedType) return false;
+      }
+      return true;
+    });
+  }, [bins, searchQuery, selectedType]);
 
   // Emit highlight ids for map markers
   useEffect(() => {
@@ -79,6 +94,30 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
     setSearchQuery(bin.name);
     setShowSuggestions(false);
   };
+
+  // Auto email report for thresholds (admin only). Use simple once-per-day gating via localStorage
+  useEffect(() => {
+    if (role !== 'admin' || !selectedBin) return;
+    const fill = typeof selectedBin.fill_pct === 'number' ? Math.round(selectedBin.fill_pct) : null;
+    if (fill == null) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const id = selectedBin.id;
+    const key = (thr: number) => `bl_email_${id}_${thr}_${today}`;
+    const send = async (thr: number) => {
+      try {
+        const res = await fetch(`/api/bins/${id}/send-report`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'auto', fill_pct: fill })
+        });
+        if (res.ok) localStorage.setItem(key(thr), '1');
+      } catch {}
+    };
+    if (fill >= 100 && !localStorage.getItem(key(100))) {
+      send(100);
+    } else if (fill >= 70 && !localStorage.getItem(key(70))) {
+      send(70);
+    }
+  }, [role, selectedBin]);
 
   // Load today's fill trend for the selected bin from bin_metrics
   useEffect(() => {
@@ -232,6 +271,15 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                   <TabsTrigger className="data-[state=active]:bg-background dark:data-[state=active]:bg-background rounded-md text-[13px]" value="chat">AI Chatbot</TabsTrigger>
                 </TabsList>
 
+                {/* Admin filter for bin type */}
+                {role === 'admin' && (
+                  <div className="mb-3 flex gap-2">
+                    <Button size="sm" variant={selectedType==='all' ? 'default' : 'outline'} onClick={() => setSelectedType('all')}>All</Button>
+                    <Button size="sm" variant={selectedType==='private' ? 'default' : 'outline'} onClick={() => setSelectedType('private')}>Private</Button>
+                    <Button size="sm" variant={selectedType==='public' ? 'default' : 'outline'} onClick={() => setSelectedType('public')}>Public</Button>
+                  </div>
+                )}
+
                 {/* Search Bar */}
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -334,7 +382,7 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                         </CardHeader>
                         <CardContent className="pt-1 pb-3">
                           {trendLoading ? (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading todays fill trend…</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading today&#39;s fill trend…</div>
                           ) : trendData.length ? (
                             <div className="h-40">
                               <ChartContainer config={{ fill: { label: 'Fill %', color: 'hsl(142 72% 29%)' } }}>
@@ -397,6 +445,13 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                                   bin.status === 'critical' ? 'bg-red-500' :
                                   'bg-gray-500'
                                 }`} />
+                                {role === 'admin' && (
+                                  <Button size="sm" variant="secondary" className="ml-2 h-7 text-[11px]"
+                                    onClick={(e) => { e.stopPropagation(); setReportBin({ id: bin.id, name: bin.name, fill: typeof bin.fill_pct==='number'?Math.round(bin.fill_pct):undefined, is_open: typeof bin.is_open==='boolean'?bin.is_open:undefined }); setReportNote(''); setReportOpen(true); }}
+                                  >
+                                    Send report
+                                  </Button>
+                                )}
                               </div>
                             </Button>
                           </motion.div>
@@ -533,6 +588,57 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Admin: Send Report Dialog */}
+        <Dialog open={reportOpen} onOpenChange={(open) => { setReportOpen(open); if (!open) { setReportBin(null); setReportNote(''); } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Send report{reportBin ? ` — ${reportBin.name}` : ''}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  This email will be sent to the bin owner with the latest status. You can include an optional note.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Note</label>
+                <Textarea
+                  value={reportNote}
+                  onChange={(e) => setReportNote(e.target.value)}
+                  placeholder="Add any notes or instructions…"
+                  className="min-h-[96px] text-sm"
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="ghost" onClick={() => { setReportOpen(false); setReportBin(null); setReportNote(''); }}>Cancel</Button>
+              <Button
+                onClick={async () => {
+                  if (!reportBin) { setReportOpen(false); return; }
+                  try {
+                    const res = await fetch(`/api/bins/${reportBin.id}/send-report`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ reason: 'manual', note: reportNote || undefined, fill_pct: reportBin.fill, is_open: reportBin.is_open })
+                    });
+                    if (!res.ok) {
+                      const msg = await res.text();
+                      console.error('Report send failed:', msg);
+                    }
+                  } catch (err) {
+                    console.error('Report send error:', err);
+                  } finally {
+                    setReportOpen(false);
+                    setReportBin(null);
+                    setReportNote('');
+                  }
+                }}
+              >
+                Send report
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         </div>
       </motion.div>
     </div>
@@ -676,7 +782,9 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
           </div>
         )}
         {position && bins.length <= 1 && (
-          <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more bins to compute multi-stop routes.</div>
+          <>
+            <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more bins to compute multi-stop routes.</div>
+          </>
         )}
       </CardContent>
     </Card>

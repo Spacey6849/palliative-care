@@ -2,60 +2,40 @@
 
 ## Aim
 
-Empower communities to monitor, manage, and keep public and private bins healthy using real-time data, secure access, and AI-powered insights.
+Empower local governments and communities to monitor, manage, and optimize bin collection using live IoT metrics, automated alerts, and AI insights.
 
-## Description
+## Quick project summary
 
-BinLink AI is a modern web platform for smart bin management. It provides interactive mapping, live bin metrics, secure authentication, and an AI chat assistant to help users monitor public and household garbage bins. Designed for both admins and regular users, BinLink AI streamlines bin monitoring and data-driven collaboration.
+BinLink is a Next.js + Supabase application that visualizes real-time bin metrics, supports admin/user roles, and sends automated emails for lid-open alerts and report generation. It includes an AI assistant for quick bin queries and a predictive fill chart driven by historical metrics.
 
-## Features
+## Key features
 
-- Real-time bin metrics dashboard (fill %, lid open/closed, online/offline)
-- Interactive map with dark/light mode and bin selection
-- Secure authentication (custom login, signup, email verification, password reset)
-- User and admin roles
-- AI-powered chat assistant (Google Gemini)
-- Email notifications for verification, password reset, and lid-open alerts (> 2 minutes)
-- Responsive, modern UI with accessibility focus
-- Netlify deployment with secrets scanning
+- Interactive map with live bin markers and popups
+- Real-time metrics (fill %, lid open/closed, online/offline)
+- Role-based UI (admin vs user); admin filters for Private/Public bins
+- AI Chat assistant (Gemini) with structured bin grounding
+- Email alerts: verification, password reset, lid-open alerts, manual bin reports
+- Realtime subscriptions to update UI without full reloads
 
-## Tech Stack
-
-- Next.js 13 (App Router)
-- Supabase (database & auth)
-- Node.js 20.x
-- React, TypeScript
-- Tailwind CSS
-- Leaflet (maps)
-- Nodemailer (SMTP email)
-- Netlify (hosting)
-
-## Prerequisites
-
-- Node.js 20.x (LTS)
-- npm 9+
-- Supabase project (URL + anon key + service role key)
-- SMTP credentials for email verification
-
-## Setup (Local)
+## Quickstart (local)
 
 1. Install dependencies
 
-```bash
+```powershell
 npm install
 ```
 
-2. Copy environment template and fill in values
+2. Copy env template and edit
 
-```bash
+```powershell
 copy .env.example .env.local
+notepad .env.local
 ```
 
-Then edit `.env.local`:
+Minimum env values:
 
 ```ini
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
@@ -65,74 +45,61 @@ SMTP_PORT=465
 SMTP_USER=your-user
 SMTP_PASS=your-pass
 MAIL_FROM="BinLink <noreply@example.com>"
+
+CRON_SECRET=supersecretvalue
+GEMINI_API_KEY=your-gemini-key (optional)
 ```
 
-3. Run the app
+3. Run
 
-```bash
+```powershell
 npm run dev
 ```
 
 Open http://localhost:3000
 
-## Deployment (Netlify)
+## Deployment notes
 
-The repo is configured for Netlify using `@netlify/plugin-nextjs` and Node 20.x (LTS).
+- The app is configured for Netlify; use `netlify.toml` and set the same env vars there.
+- Ensure `SUPABASE_SERVICE_ROLE_KEY` is set for server routes that need elevated access.
 
-- `netlify.toml` sets:
-  - build.command = `npm run build`
-  - publish = `.next`
-  - environment: NODE_VERSION=20, NODE_ENV=production, NPM_FLAGS=--force
-
-Required environment variables in Netlify UI (Site settings → Build & deploy → Environment):
-
-- NEXT_PUBLIC_APP_URL (e.g., https://your-site.netlify.app)
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM
-- GEMINI_API_KEY (optional, for chat)
-- ADMIN_SEED_SECRET (optional)
-- CRON_SECRET (required for lid-open alert endpoint)
-- NEXT_PUBLIC_ADMIN_EMAIL (optional, used by login overlay to allow admin login by email)
-
-Notes:
-
-- Supabase client is created lazily (see `lib/supabase/client.ts`) to avoid build-time env evaluation.
-- Sensitive API routes are marked dynamic/no-store where needed.
-- If a build fails with missing types in production, ensure required `@types/*` packages are regular dependencies (not devDependencies).
-
-### Environment isolation across projects
-
-If you work with multiple Supabase projects or Netlify sites, make sure each environment uses a unique cookie namespace and consistent project ref:
-
-- Keep one `.env.local` per project and avoid mixing refs/keys.
-- The app sets a single session cookie `bl_session`. Clear cookies when switching between projects: in the browser DevTools > Application > Cookies.
-- Our Supabase client logs a diagnostic line in dev showing URL ref vs Key ref; if they don’t match, update your env vars.
-- After changing env values, fully restart the dev server so server routes pick up the new keys.
-
-## Key paths
+## Important paths
 
 - API routes: `app/api/**`
-- Auth page: `app/auth/page.tsx`
+- Map page: `app/maps/page.tsx`
+- Sidebar/dashboard: `components/sidebar.tsx`
+- Map markers/popups: `components/map-component.tsx`
+- Mailer helpers: `lib/mailer.ts`
 - Supabase client: `lib/supabase/client.ts`
-- Mailer: `lib/mailer.ts`
 
-### Lid-open alerts (cron)
+## Lid-open alerts (cron)
 
-Endpoint: `GET or POST /api/cron/lid-open-alerts`
+- Endpoint: `GET|POST /api/cron/lid-open-alerts`
+- Requires header: `x-cron-secret: $CRON_SECRET`
+- Behavior: scans `bin_metrics` for lid_open=true with a recorded_at older than 2 minutes and emails the owner. If `bin_alerts` table exists, the route will use it to backoff (default 30 minutes).
 
-Security: requires header `x-cron-secret: $CRON_SECRET`
+## Sending manual bin reports
 
-Behavior: scans latest `bin_metrics` per bin; when a bin's `lid_open` is true and the last recorded_at is older than 2 minutes, an email is sent to the owner using `sendBinOpenAlertEmail`.
+- Admins can send a manual report from the dashboard or from the map popup. This calls `POST /api/bins/[id]/send-report` with optional `note`, `reason`, and latest fill/is_open values.
 
-Backoff: if a table `bin_alerts(bin_id uuid primary key, last_alert_at timestamptz)` exists and is accessible, the endpoint rate-limits emails to at most once every 30 minutes per bin. If the table is missing or blocked by RLS, the endpoint still works but may send more frequently depending on your scheduler cadence.
+## Predictive Fill
 
-Scheduling: on Netlify or your platform of choice, set a scheduled job (e.g., every 2 minutes) to invoke this endpoint with the secret header.
+- The “AI Predictive Fill (Monthly)” chart in the dashboard uses the last 30 days of `bin_metrics` for the currently filtered bins to derive a daily average and a smoothed prediction.
 
 ## Troubleshooting
 
-- Invalid Supabase URL/Key: Double-check `.env*` and Netlify env variables. URL should be like `https://<ref>.supabase.co`.
-- 401 from Supabase in server routes: Ensure `SUPABASE_SERVICE_ROLE_KEY` is set in Netlify; rotate if needed.
-- Email not sending: Verify SMTP\_\* and MAIL_FROM. Check provider logs; ports 465/587 commonly used.
-- Local Windows: If Netlify CLI packaging fails, rely on Netlify cloud builds via GitHub.
+- If emails don’t send, verify SMTP settings and check provider logs.
+- If metrics appear stale, ensure Supabase realtime is configured and the service role key is correct.
+
+## Contributing
+
+1. Fork and create a feature branch
+2. Make changes and open a PR
+3. CI runs tests and a Netlify preview deploy
+
+---
+
+## Developer notes
+
+- Cookie: `bl_session` is used for user sessions. Clear cookies when switching environments.
+- The app prefers `bin_metrics.bin_id` joins with a fallback on `bin_name` to help during migration.

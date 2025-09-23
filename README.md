@@ -8,6 +8,17 @@ Empower local governments and communities to monitor, manage, and optimize bin c
 
 BinLink is a Next.js + Supabase application that visualizes real-time bin metrics, supports admin/user roles, and sends automated emails for lid-open alerts and report generation. It includes an AI assistant for quick bin queries and a predictive fill chart driven by historical metrics.
 
+## Tech stack
+
+- Frontend: Next.js 13 (App Router), React 18, TypeScript, Tailwind CSS
+- Backend: Server-side Next.js API routes, Supabase Postgres (Realtime)
+- Database: Supabase Postgres (tables: users, user_bins, bin_metrics, bin_alerts)
+- Realtime: Supabase Realtime subscriptions for soft UI refresh
+- Mailer: Nodemailer + SMTP
+- Mapping & Charts: Leaflet/react-leaflet and Recharts
+- AI: Gemini (via server grounding) for the chat assistant
+- Hosting: Netlify (preview/deploy) or Vercel; keep service-role key server-side
+
 ## Key features
 
 - Interactive map with live bin markers and popups

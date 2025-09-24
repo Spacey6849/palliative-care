@@ -19,6 +19,7 @@ type NavLink = {
 };
 
 const links: NavLink[] = [
+  { href: "/home", label: "Home" },
   { href: "/maps", label: "Map" },
   // Setup handled via custom button (still kept for mapping consistency but rendered differently)
   { href: "/setup/bins", label: "Setup" },
@@ -52,11 +53,20 @@ export function NavBar() {
           </div>
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-1 md:gap-2">
-            {links.filter(l => !user || (l.mode !== 'login' && l.mode !== 'signup')).map(l => {
+            {links
+              .filter(l => {
+                // For signed-out users, show only Home/Login/Sign Up
+                if (!user) return l.href === '/home' || l.mode === 'login' || l.mode === 'signup';
+                // Signed-in users: hide auth links
+                return l.mode !== 'login' && l.mode !== 'signup';
+              })
+              .map(l => {
               const basePath = l.href.split("?")[0];
               let active: boolean;
               if (basePath === "/auth") {
                 active = safePathname === "/auth" && (l.mode || "login") === currentMode;
+              } else if (basePath === "/home") {
+                active = safePathname === "/home";
               } else if (basePath === "/maps") {
                 active = safePathname === "/maps";
               } else if (basePath === "/setup/bins") {
@@ -185,11 +195,16 @@ export function NavBar() {
             transition={{ duration: 0.18, ease: [0.16,1,0.3,1] }}
             className={`md:hidden absolute top-full left-0 right-0 mt-2 origin-top rounded-2xl border backdrop-blur-2xl shadow-lg p-3 flex flex-col gap-1 ${profileDarkOverride ? 'border-neutral-700/70 bg-neutral-900/95' : 'border-gray-200/70 dark:border-neutral-700/70 bg-white/95 dark:bg-neutral-900/90'}`}
           >
-            {links.map(l => {
+            {links.filter(l => {
+              if (!user) return l.href === '/home' || l.mode === 'login' || l.mode === 'signup';
+              return l.mode !== 'signup';
+            }).map(l => {
               const basePath = l.href.split('?')[0];
               let active: boolean;
               if (basePath === '/auth') {
                 active = safePathname === '/auth' && (l.mode || 'login') === currentMode;
+              } else if (basePath === '/home') {
+                active = safePathname === '/home';
               } else if (basePath === '/maps') {
                 active = safePathname === '/maps';
               } else if (basePath === '/setup/bins') {

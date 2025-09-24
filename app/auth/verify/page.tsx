@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -9,7 +8,7 @@ export default function VerifyPage() {
   const [msg, setMsg] = useState('Verifying your email…');
 
   useEffect(() => {
-  const token = search?.get('token');
+    const token = search?.get('token');
     if (!token) {
       router.replace('/auth?mode=login&verify_error=missing');
       return;

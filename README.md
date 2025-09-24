@@ -46,6 +46,7 @@ notepad .env.local
 Minimum env values:
 
 ```ini
+# For production, set to your deployed origin (no path): e.g. https://binlinkai.netlify.app
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY

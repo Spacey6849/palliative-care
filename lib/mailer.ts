@@ -20,7 +20,8 @@ export function getTransport() {
 export async function sendVerificationEmail(to: string, token: string) {
   const env = process.env as Record<string, string | undefined>;
   const base = env['NEXT_PUBLIC_APP_URL'] || 'http://localhost:3000';
-  const verifyUrl = `${base}/auth/verify?token=${encodeURIComponent(token)}`;
+  // Use absolute path with URL to avoid inheriting any path (e.g., '/maps') from base
+  const verifyUrl = new URL(`/auth/verify?token=${encodeURIComponent(token)}`, base).toString();
   const transport = getTransport();
   await transport.sendMail({
     from: env['MAIL_FROM'] || 'no-reply@binlink.local',
@@ -34,7 +35,7 @@ export async function sendVerificationEmail(to: string, token: string) {
 export async function sendPasswordResetEmail(to: string, token: string) {
   const env = process.env as Record<string, string | undefined>;
   const base = env['NEXT_PUBLIC_APP_URL'] || 'http://localhost:3000';
-  const resetUrl = `${base}/auth/reset?token=${encodeURIComponent(token)}`;
+  const resetUrl = new URL(`/auth/reset?token=${encodeURIComponent(token)}`, base).toString();
   const transport = getTransport();
   await transport.sendMail({
     from: env['MAIL_FROM'] || 'no-reply@binlink.local',

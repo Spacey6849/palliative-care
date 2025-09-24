@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from './user-context';
+import { toast } from '@/hooks/use-toast';
 
 type Mode = "login" | "signup";
 
@@ -171,6 +172,10 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                         setError(j.error || 'Signup failed'); setSubmitting(false); return;
                       }
                       setMode('login');
+                      toast({
+                        title: 'Verification email sent',
+                        description: `Email verification sent to ${signupEmail}`,
+                      });
                     } catch (e:any) {
                       setError(e?.message || 'Signup error');
                     } finally {

@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { NavBar } from '@/components/nav-bar';
 import { AuthOverlayProvider } from '@/components/auth-overlay';
 import { UserProvider } from '@/components/user-context';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -38,6 +39,7 @@ export default function RootLayout({
               <NavBar />
               <main id="app" className="relative z-0 min-h-screen">{children}</main>
               <div id="portal-root" className="relative" />
+              <Toaster />
             </AuthOverlayProvider>
           </UserProvider>
         </ThemeProvider>

@@ -1,6 +1,5 @@
-// Temporary: skip TypeScript checking for this large WebGL file to avoid CI failures
-// caused by missing or mismatched `three` type declarations on production builds.
-// TODO: replace with precise `.d.ts` shims and remove this line once Netlify builds cleanly.
+// Temporary shim in place for three types during CI; see `project/types/three-shim.d.ts`.
+// Remove this comment when a full typing solution (or `@types/three`) is available.
 // @ts-nocheck
 "use client";
 import React, { useEffect, useRef } from 'react';

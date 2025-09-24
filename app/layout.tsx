@@ -7,15 +7,13 @@ import { NavBar } from '@/components/nav-bar';
 import { AuthOverlayProvider } from '@/components/auth-overlay';
 import { UserProvider } from '@/components/user-context';
 import { Toaster } from '@/components/ui/toaster';
+import AppBackground from '@/components/app-background';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'BinLink AI – Smart Bin Monitoring',
   description: 'BinLink AI: real-time smart garbage bin monitoring with interactive mapping',
-  icons: {
-    icon: '/favicon.ico'
-  },
   viewport: 'width=device-width,initial-scale=1,maximum-scale=1'
 };
 
@@ -37,7 +35,9 @@ export default function RootLayout({
           <UserProvider>
             <AuthOverlayProvider>
               <NavBar />
-              <main id="app" className="relative z-0 min-h-screen">{children}</main>
+          {/* Global decorative background for selected routes */}
+          <AppBackground />
+                <main id="app" className="relative z-10 min-h-screen">{children}</main>
               <div id="portal-root" className="relative" />
               <Toaster />
             </AuthOverlayProvider>

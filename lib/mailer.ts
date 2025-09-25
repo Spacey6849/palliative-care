@@ -62,6 +62,51 @@ export async function sendBinOpenAlertEmail(to: string, binName: string, minutes
   });
 }
 
+// Richer lid-open report email including optional fill percentage classification
+export async function sendBinOpenReportEmail(options: {
+  to: string;
+  binName: string;
+  minutesOpen: number;
+  fillPct?: number | null;
+  locationLabel?: string | null;
+  binType?: string | null;
+}) {
+  const { to, binName, minutesOpen } = options;
+  const env = process.env as Record<string, string | undefined>;
+  const transport = getTransport();
+  const pct = typeof options.fillPct === 'number' ? Math.round(options.fillPct) : null;
+  const full = pct != null && pct >= 100;
+  const almost = pct != null && !full && pct > 80;
+  const statusTag = full ? 'FULL' : almost ? 'ALMOST FULL' : pct != null ? `${pct}%` : undefined;
+  const duration = minutesOpen < 1 ? '<1 minute' : `${minutesOpen} minute${minutesOpen === 1 ? '' : 's'}`;
+
+  const subjectParts: string[] = [`${binName} Lid Open ${minutesOpen}m`];
+  if (statusTag) subjectParts.push(statusTag);
+  const subject = `[BinLink] ${subjectParts.join(' – ')}`;
+
+  const lines: string[] = [];
+  lines.push(`The lid for "${binName}" has remained open for ${duration}.`);
+  if (pct != null) {
+    if (full) lines.push(`Current fill level: 100% (FULL). Immediate collection recommended.`);
+    else if (almost) lines.push(`Current fill level: ${pct}% (ALMOST FULL). Plan collection soon.`);
+    else lines.push(`Current fill level: ${pct}%.`);
+  }
+  if (options.locationLabel) lines.push(`Location: ${options.locationLabel}`);
+  if (options.binType) lines.push(`Bin Type: ${String(options.binType).toUpperCase()}`);
+  lines.push('Action: Please check the bin and close the lid to prevent contamination, pests, or sensor misreads.');
+
+  const text = lines.join('\n');
+  const html = `<div>${lines.map(l => `<p>${escapeHtml(l)}</p>`).join('')}</div>`;
+
+  await transport.sendMail({
+    from: env['MAIL_FROM'] || 'alerts@binlink.local',
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
 // Alert when bin crosses fill thresholds ("almost full" >80%, "full" =100%)
 export async function sendBinFillAlertEmail(to: string, binName: string, fillPct: number) {
   const env = process.env as Record<string, string | undefined>;

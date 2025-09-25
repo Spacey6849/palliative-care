@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase/client';
-import { sendBinOpenAlertEmail } from '@/lib/mailer';
+import { sendBinOpenReportEmail } from '@/lib/mailer';
 
 // Runs a one-off scan: find bins with lid_open true for > 2 minutes since last closed
 // and send an alert email to the owner. Idempotency is handled by checking the most recent
@@ -32,24 +32,24 @@ async function processAlerts(req: NextRequest) {
   // We'll select from bin_metrics ordered by recorded_at desc and group in memory.
   const { data: latest, error: metricErr } = await supabase
     .from('bin_metrics')
-    .select('bin_id, lid_open, recorded_at')
+    .select('bin_id, lid_open, recorded_at, fill_pct')
     .order('recorded_at', { ascending: false });
 
   if (metricErr) {
     return NextResponse.json({ ok: false, error: metricErr.message }, { status: 500 });
   }
 
-  const latestByBin = new Map<string, { lid_open: boolean | null; recorded_at: string }>();
+  const latestByBin = new Map<string, { lid_open: boolean | null; recorded_at: string; fill_pct: number | null }>();
   for (const m of latest || []) {
     if (!latestByBin.has(m.bin_id as any)) {
-      latestByBin.set(m.bin_id as any, { lid_open: (m as any).lid_open ?? null, recorded_at: (m as any).recorded_at });
+      latestByBin.set(m.bin_id as any, { lid_open: (m as any).lid_open ?? null, recorded_at: (m as any).recorded_at, fill_pct: (m as any).fill_pct ?? null });
     }
   }
 
   // 2) Filter bins open for > 2 minutes
   const now = Date.now();
   const openTooLongIds: string[] = [];
-  latestByBin.forEach((m, binId) => {
+  latestByBin.forEach((m: any, binId) => {
     const open = Boolean(m.lid_open);
     if (!open) return;
     const t = new Date(m.recorded_at).getTime();
@@ -65,7 +65,7 @@ async function processAlerts(req: NextRequest) {
   // 3) Join with user_bins + users to get owner email and bin name
   const { data: bins, error: binsErr } = await supabase
     .from('user_bins')
-    .select('id, name, users(email)')
+    .select('id, name, location_label, bin_type, users(email)')
     .in('id', openTooLongIds);
 
   if (binsErr) {
@@ -105,7 +105,17 @@ async function processAlerts(req: NextRequest) {
 
     if (!allowed) continue;
     try {
-      await sendBinOpenAlertEmail(email, binName, 2);
+      const metric = latestByBin.get(binId as any) as any;
+      const recordedAt = metric?.recorded_at ? new Date(metric.recorded_at).getTime() : Date.now();
+      const minutesOpen = Math.max(2, Math.floor((Date.now() - recordedAt) / 60000));
+      await sendBinOpenReportEmail({
+        to: email,
+        binName,
+        minutesOpen,
+        fillPct: metric?.fill_pct == null ? null : Number(metric.fill_pct),
+        locationLabel: (b as any).location_label || null,
+        binType: (b as any).bin_type || null,
+      });
       sent += 1;
       try {
         // Upsert last alert time (best effort)

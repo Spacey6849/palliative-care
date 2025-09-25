@@ -43,14 +43,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const to = owner.email;
     const name = bin.name || 'Bin';
     const parts: string[] = [];
-    if (typeof fill_pct === 'number') parts.push(`Bin Fill level is ${Math.round(fill_pct)}%`);
+    if (typeof fill_pct === 'number') {
+      const pct = Math.round(fill_pct);
+      let statusMsg = `Bin Fill level is ${pct}%`;
+      if (pct >= 100) statusMsg += ' (FULL)';
+      else if (pct > 80) statusMsg += ' (ALMOST FULL)';
+      parts.push(statusMsg);
+    }
     if (typeof is_open === 'boolean') parts.push(`Bin Lid is ${is_open ? 'Open' : 'Closed'}`);
     if (bin.location_label) parts.push(`Location: ${bin.location_label}`);
     if (bin.bin_type) parts.push(`Bin Type: ${String(bin.bin_type).toUpperCase()}`);
     if (note && note.trim()) parts.push(`Note: ${note.trim()}`);
 
     const subjectBase = `[BinLink] ${name} Report`;
-    const subj = fill_pct != null ? `${subjectBase} – Fill ${Math.round(fill_pct)}%` : subjectBase;
+    let subj = subjectBase;
+    if (fill_pct != null) {
+      const pct = Math.round(fill_pct);
+      if (pct >= 100) subj = `[BinLink] ${name} FULL (100%)`;
+      else if (pct > 80) subj = `[BinLink] ${name} nearly full (${pct}%)`;
+      else subj = `${subjectBase} – Fill ${pct}%`;
+    }
     const text = parts.join('\n');
     const html = `<div>${parts.map(p => `<p>${escapeHtml(p)}</p>`).join('')}</div>`;
 

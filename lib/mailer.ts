@@ -61,3 +61,37 @@ export async function sendBinOpenAlertEmail(to: string, binName: string, minutes
     html,
   });
 }
+
+// Alert when bin crosses fill thresholds ("almost full" >80%, "full" =100%)
+export async function sendBinFillAlertEmail(to: string, binName: string, fillPct: number) {
+  const env = process.env as Record<string, string | undefined>;
+  const transport = getTransport();
+  const pct = Math.round(fillPct);
+  const full = pct >= 100;
+  const almost = !full && pct > 80;
+  if (!full && !almost) return; // nothing to send
+  const subject = full
+    ? `[BinLink] ${binName} is FULL (100%)`
+    : `[BinLink] ${binName} nearly full (${pct}%)`;
+  const text = full
+    ? `Your bin "${binName}" has reached 100% capacity. Please schedule immediate collection.`
+    : `Your bin "${binName}" is almost full at ${pct}%. Plan collection soon to avoid overflow.`;
+  const html = full
+    ? `<p>Your bin <strong>${escapeHtml(binName)}</strong> has reached <strong>100% capacity</strong>.</p><p><strong>Action:</strong> Schedule immediate collection.</p>`
+    : `<p>Your bin <strong>${escapeHtml(binName)}</strong> is almost full at <strong>${pct}%</strong>.</p><p><strong>Action:</strong> Plan collection soon to avoid overflow.</p>`;
+  await transport.sendMail({
+    from: env['MAIL_FROM'] || 'alerts@binlink.local',
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}

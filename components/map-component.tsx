@@ -132,7 +132,7 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
             const tds = Number(bin.data?.tds ?? NaN);
             const pctFromDemo = isFinite(tds) ? Math.round(Math.max(0, Math.min(100, ((tds - 200) / (800 - 200)) * 100))) : null;
             const pct = pctFromMetrics ?? (pctFromDemo ?? 0);
-            const effectiveStatus: BinData['status'] = pct >= 95 ? 'critical' : bin.status;
+            const effectiveStatus: BinData['status'] = pct >= 80 ? 'critical' : bin.status;
             return createCustomIcon(effectiveStatus, highlightedBinIds.includes(bin.id));
           })()}
           ref={(ref) => { if (ref) markerRefs[bin.id] = ref; }}
@@ -174,8 +174,10 @@ export function MapComponent({ bins, selectedBin, onBinSelect, highlightedBinIds
                 const pct = typeof bin.fill_pct === 'number'
                   ? Math.round(Math.max(0, Math.min(100, bin.fill_pct)))
                   : (() => { const t = Number(bin.data?.tds ?? NaN); return isFinite(t) ? Math.round(Math.max(0, Math.min(100, ((t - 200) / (800 - 200)) * 100))) : 0; })();
-                if (pct >= 95) {
+                if (pct >= 100) {
                   return <p className="text-[10px] text-red-500 font-medium">Bin is Full!</p>;
+                } else if (pct > 80) {
+                  return <p className="text-[10px] text-red-500 font-medium">Bin Almost Full</p>;
                 }
                 return <p className="text-[10px] text-muted-foreground">{bin.status === 'active' ? 'All good. Monitoring fill level.' : 'Attention: Bin may be open.'}</p>;
               })()}

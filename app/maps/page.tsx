@@ -20,6 +20,28 @@ export default function MapsPage() {
   const { user, role } = useUser();
   const supabase = getSupabase();
 
+  // Auto email triggers when viewing a bin (admin only): send one email per threshold per day
+  useEffect(() => {
+    if (role !== 'admin' || !selectedBin) return;
+    const fill = typeof selectedBin.fill_pct === 'number' ? Math.round(selectedBin.fill_pct) : null;
+    if (fill == null) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const id = selectedBin.id;
+    const key = (thr: number) => `bl_email_${id}_${thr}_${today}`;
+    const send = async (thr: number) => {
+      try {
+        const res = await fetch(`/api/bins/${id}/send-report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'auto', fill_pct: fill })
+        });
+        if (res.ok) localStorage.setItem(key(thr), '1');
+      } catch {}
+    };
+    if (fill >= 100 && !localStorage.getItem(key(100))) send(100);
+    else if (fill > 80 && !localStorage.getItem(key(81))) send(81);
+  }, [role, selectedBin]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -30,7 +52,7 @@ export default function MapsPage() {
           const tds = fill == null ? 360 : 200 + (fill / 100) * 600; // inverse mapping to align with existing UI
           const offline = (bin?.status || '').toLowerCase() === 'offline';
           const isOpen = typeof bin?.data?.is_open === 'boolean' ? bin.data.is_open : false;
-          const inferredStatus: BinData['status'] = offline ? 'offline' : (fill != null && fill >= 95 ? 'critical' : (isOpen ? 'warning' : 'active'));
+          const inferredStatus: BinData['status'] = offline ? 'offline' : (fill != null && fill >= 80 ? 'critical' : (isOpen ? 'warning' : 'active'));
           return {
             id: bin.id,
             name: bin.name,
@@ -65,7 +87,7 @@ export default function MapsPage() {
             const tds = fill == null ? 360 : 200 + (fill / 100) * 600;
             const offline = (row.status || '').toLowerCase() === 'offline';
             const isOpen = typeof row.is_open === 'boolean' ? row.is_open : null;
-            const inferredStatus: BinData['status'] = offline ? 'offline' : (fill != null && fill >= 95 ? 'critical' : (isOpen ? 'warning' : 'active'));
+            const inferredStatus: BinData['status'] = offline ? 'offline' : (fill != null && fill >= 80 ? 'critical' : (isOpen ? 'warning' : 'active'));
             return {
               id: row.id,
               name: row.name,
@@ -126,7 +148,7 @@ export default function MapsPage() {
               const nextIsOpen = typeof isOpen === 'boolean' ? isOpen : (typeof b.is_open === 'boolean' ? b.is_open : null);
               const nextStatus: BinData['status'] = b.status === 'offline'
                 ? 'offline'
-                : (nextFill != null && nextFill >= 95)
+                : (nextFill != null && nextFill >= 80)
                 ? 'critical'
                 : (nextIsOpen ? 'warning' : 'active');
               return {
@@ -154,7 +176,7 @@ export default function MapsPage() {
             const nextIsOpen = typeof isOpen === 'boolean' ? isOpen : (typeof prev.is_open === 'boolean' ? prev.is_open : null);
             const nextStatus: BinData['status'] = prev.status === 'offline'
               ? 'offline'
-              : (nextFill != null && nextFill >= 95)
+              : (nextFill != null && nextFill >= 80)
               ? 'critical'
               : (nextIsOpen ? 'warning' : 'active');
             return {

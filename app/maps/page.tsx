@@ -202,6 +202,25 @@ export default function MapsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Auto-send open lid alert when a bin is displayed as open (client-side assist). Daily per-bin dedupe.
+  useEffect(() => {
+    if (!user) return; // only for authenticated users (we have owner email server-side)
+    const today = new Date().toISOString().slice(0,10);
+    const openBins = bins.filter(b => b.is_open === true || (b.status === 'warning' && b.is_open));
+    openBins.forEach(b => {
+      const key = `bl_openalert_${b.id}_${today}`;
+      if (localStorage.getItem(key)) return; // already sent today
+      // Fire and forget to server report endpoint with is_open context (no fill pct unless we have it)
+      fetch(`/api/bins/${b.id}/send-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'auto-open', is_open: true, fill_pct: b.fill_pct })
+      }).then(res => {
+        if (res.ok) localStorage.setItem(key, '1');
+      }).catch(()=>{});
+    });
+  }, [bins, user]);
+
   return (
     <div className="h-screen w-full overflow-hidden bg-gradient-to-br from-blue-50 via-white to-cyan-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 relative">
       <div className="absolute inset-0">

@@ -1,7 +1,11 @@
 import LiquidEther from '@/components/LiquidEther';
+import { useUser } from '@/components/user-context';
+import React from 'react';
 
 // Background is rendered here for the home page
 export default function HomePage() {
+  const { user, role } = useUser();
+  const isAuthed = !!user || !!role; // role will exist for admin
   return (
     <div className="relative min-h-screen">
   {/* background container - absolute, behind content (full viewport) */}
@@ -54,8 +58,12 @@ export default function HomePage() {
 
       <div className="mt-8 flex flex-wrap items-center gap-3 justify-center">
         <a href="/maps" className="inline-flex items-center px-5 py-3 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500">Open Map</a>
-        <a href="/auth?mode=signup" className="inline-flex items-center px-5 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-500">Create Account</a>
-        <a href="/auth?mode=login" className="inline-flex items-center px-5 py-3 rounded-xl border text-sm font-medium">Sign In</a>
+        {!isAuthed && (
+          <>
+            <a href="/auth?mode=signup" className="inline-flex items-center px-5 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-500">Create Account</a>
+            <a href="/auth?mode=login" className="inline-flex items-center px-5 py-3 rounded-xl border text-sm font-medium">Sign In</a>
+          </>
+        )}
       </div>
       </section>
     </div>

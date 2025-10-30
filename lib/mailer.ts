@@ -24,9 +24,9 @@ export async function sendVerificationEmail(to: string, token: string) {
   const verifyUrl = new URL(`/auth/verify?token=${encodeURIComponent(token)}`, base).toString();
   const transport = getTransport();
   await transport.sendMail({
-    from: env['MAIL_FROM'] || 'no-reply@binlink.local',
+    from: env['MAIL_FROM'] || 'no-reply@palliative.local',
     to,
-    subject: 'Verify your BinLink email',
+    subject: 'Verify your Palliative Care email',
     text: `Click to verify: ${verifyUrl}`,
     html: `<p>Click to verify your email:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
   });
@@ -38,9 +38,9 @@ export async function sendPasswordResetEmail(to: string, token: string) {
   const resetUrl = new URL(`/auth/reset?token=${encodeURIComponent(token)}`, base).toString();
   const transport = getTransport();
   await transport.sendMail({
-    from: env['MAIL_FROM'] || 'no-reply@binlink.local',
+    from: env['MAIL_FROM'] || 'no-reply@palliative.local',
     to,
-    subject: 'Reset your BinLink password',
+    subject: 'Reset your Palliative Care password',
     text: `You requested a password reset. If this was you, click to reset: ${resetUrl}. If not, ignore this email.`,
     html: `<p>You requested a password reset. If this was you, click the link below:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
   });
@@ -50,11 +50,11 @@ export async function sendPasswordResetEmail(to: string, token: string) {
 export async function sendBinOpenAlertEmail(to: string, binName: string, minutesOpen: number) {
   const env = process.env as Record<string, string | undefined>;
   const transport = getTransport();
-  const subject = `[BinLink] ${binName} left open for ${minutesOpen} minutes`;
+  const subject = `[Palliative Care] ${binName} left open for ${minutesOpen} minutes`;
   const text = `Your bin "${binName}" appears to be open for over ${minutesOpen} minutes. Please check and close it to avoid issues.`;
   const html = `<p>Your bin <strong>${binName}</strong> appears to be open for over <strong>${minutesOpen} minutes</strong>.</p><p>Please check and close it to avoid issues.</p>`;
   await transport.sendMail({
-    from: env['MAIL_FROM'] || 'alerts@binlink.local',
+    from: env['MAIL_FROM'] || 'alerts@palliative.local',
     to,
     subject,
     text,
@@ -82,7 +82,7 @@ export async function sendBinOpenReportEmail(options: {
 
   const subjectParts: string[] = [`${binName} Lid Open ${minutesOpen}m`];
   if (statusTag) subjectParts.push(statusTag);
-  const subject = `[BinLink] ${subjectParts.join(' – ')}`;
+  const subject = `[Palliative Care] ${subjectParts.join(' – ')}`;
 
   const lines: string[] = [];
   lines.push(`The lid for "${binName}" has remained open for ${duration}.`);
@@ -99,7 +99,7 @@ export async function sendBinOpenReportEmail(options: {
   const html = `<div>${lines.map(l => `<p>${escapeHtml(l)}</p>`).join('')}</div>`;
 
   await transport.sendMail({
-    from: env['MAIL_FROM'] || 'alerts@binlink.local',
+    from: env['MAIL_FROM'] || 'alerts@palliative.local',
     to,
     subject,
     text,
@@ -116,8 +116,8 @@ export async function sendBinFillAlertEmail(to: string, binName: string, fillPct
   const almost = !full && pct > 80;
   if (!full && !almost) return; // nothing to send
   const subject = full
-    ? `[BinLink] ${binName} is FULL (100%)`
-    : `[BinLink] ${binName} nearly full (${pct}%)`;
+    ? `[Palliative Care] ${binName} is FULL (100%)`
+    : `[Palliative Care] ${binName} nearly full (${pct}%)`;
   const text = full
     ? `Your bin "${binName}" has reached 100% capacity. Please schedule immediate collection.`
     : `Your bin "${binName}" is almost full at ${pct}%. Plan collection soon to avoid overflow.`;
@@ -125,7 +125,7 @@ export async function sendBinFillAlertEmail(to: string, binName: string, fillPct
     ? `<p>Your bin <strong>${escapeHtml(binName)}</strong> has reached <strong>100% capacity</strong>.</p><p><strong>Action:</strong> Schedule immediate collection.</p>`
     : `<p>Your bin <strong>${escapeHtml(binName)}</strong> is almost full at <strong>${pct}%</strong>.</p><p><strong>Action:</strong> Plan collection soon to avoid overflow.</p>`;
   await transport.sendMail({
-    from: env['MAIL_FROM'] || 'alerts@binlink.local',
+    from: env['MAIL_FROM'] || 'alerts@palliative.local',
     to,
     subject,
     text,

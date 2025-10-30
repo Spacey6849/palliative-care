@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 // Minimal user shape received from /api/me
-interface BasicUser { id: string; email: string; username: string; full_name?: string | null; phone?: string | null; location?: string | null; created_at?: string; }
+interface BasicUser { id: string; email: string; username: string; full_name?: string | null; phone?: string | null; location?: string | null; created_at?: string; role?: 'admin'; }
 
 type UserRole = 'admin' | 'user' | null;
 interface UserContextValue {
@@ -26,6 +26,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const computeRole = (u: BasicUser | null): UserRole => {
     if (!u) return null;
+    // Prefer server-provided role when available
+    if (u.role === 'admin') return 'admin';
     const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || '';
     if (adminEmail && u.email === adminEmail) return 'admin';
     return 'user';
@@ -35,10 +37,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     try {
       const r = await fetch('/api/me', { cache: 'no-store' });
       if (!r.ok) { setUser(null); setRole(null); return; }
-      const data = await r.json();
-      const u: BasicUser | null = data.user || null;
+  const data = await r.json();
+  const u: BasicUser | null = data.user || null;
       setUser(u);
-      setRole(computeRole(u));
+  setRole(computeRole(u));
     } catch {
       setUser(null); setRole(null);
     }
@@ -54,8 +56,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const r = await fetch('/api/me', { cache: 'no-store' });
-        const data = r.ok ? await r.json() : { user: null };
-        const u: BasicUser | null = data.user || null;
+  const data = r.ok ? await r.json() : { user: null };
+  const u: BasicUser | null = data.user || null;
         if (mounted) { setUser(u); setRole(computeRole(u)); setLoading(false); }
       } catch {
         if (mounted) { setUser(null); setRole(null); setLoading(false); }

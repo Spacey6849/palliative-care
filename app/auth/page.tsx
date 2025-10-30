@@ -217,9 +217,9 @@ export default function AuthPage() {
               className={`transition-opacity duration-300 ${mode === 'signup' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}
               autoComplete="on"
             >
-              <div className={`text-[11px] font-semibold tracking-wide mb-2 ${isDark ? 'text-white/55' : 'text-gray-500'}`}>REGISTERING AS BIN OWNER</div>
+              <div className={`text-[11px] font-semibold tracking-wide mb-2 ${isDark ? 'text-white/55' : 'text-gray-500'}`}>REGISTERING AS CAREGIVER</div>
               <div className="mb-3">
-                <label className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Bin Category</label>
+                <label className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Account Type</label>
                 <div className="flex gap-2 text-xs">
                   {(['private','public'] as const).map(opt => (
                     <button type="button" key={opt} onClick={()=> setBinCategory(opt)} className={`px-3 py-1.5 rounded-lg border transition ${binCategory===opt? (isDark? 'bg-white/20 border-white/40 text-white':'bg-emerald-600 border-emerald-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{opt==='private'?'Private':'Public'}</button>

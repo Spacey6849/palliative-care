@@ -18,14 +18,13 @@ try {
   remarkGfm = () => {};
 }
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Search, Gauge } from 'lucide-react';
+import { ChevronLeft, Search, Gauge, Heart, Activity, Droplets, Thermometer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BinData } from '@/lib/bin-data';
 import { MetricCard } from './metric-card';
 // Bin chart component removed with wells cleanup
 import { ThemeToggle } from './theme-toggle';
@@ -47,103 +46,67 @@ import {
 } from 'recharts';
 import { getSupabase } from '@/lib/supabase/client';
 
-interface SidebarProps {
-  bins: BinData[];
-  selectedBin?: BinData;
-  onBinSelect: (bin: BinData) => void;
-  onSearchHighlightChange?: (ids: string[]) => void; // emit matching bin ids for map highlighting
+export interface PatientData {
+  id: string;
+  full_name: string;
+  lat: number;
+  lng: number;
+  emergency: boolean;
+  last_updated: string;
+  heart_rate?: number;
+  spo2?: number;
+  body_temp?: number;
+  room_temp?: number;
+  room_humidity?: number;
+  ecg?: string;
+  fall_detected: boolean;
+  status: 'normal' | 'warning' | 'critical' | 'emergency';
 }
 
-export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChange }: SidebarProps) {
+interface SidebarProps {
+  patients: PatientData[];
+  selectedPatient?: PatientData;
+  onPatientSelect: (patient: PatientData) => void;
+  onSearchHighlightChange?: (ids: string[]) => void; // emit matching patient ids for map highlighting
+}
+
+export function Sidebar({ patients, selectedPatient, onPatientSelect, onSearchHighlightChange }: SidebarProps) {
   // Start collapsed by default (mobile); expand on desktop after mount
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeChart, setActiveChart] = useState<'ph' | 'tds' | 'temperature' | 'waterLevel'>('ph');
+  const [activeChart, setActiveChart] = useState<'heart_rate' | 'spo2' | 'body_temp' | 'room_temp'>('heart_rate');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [trendData, setTrendData] = useState<{ time: string; fill: number }[]>([]);
+  const [trendData, setTrendData] = useState<{ time: string; value: number }[]>([]);
   const [trendLoading, setTrendLoading] = useState(false);
-  const [monthlyData, setMonthlyData] = useState<{ day: number; predicted: number }[]>([]);
-  const [monthlyLoading, setMonthlyLoading] = useState(false);
-  const [selectedType, setSelectedType] = useState<'all' | 'private' | 'public'>('all');
   const { role } = useUser();
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportBin, setReportBin] = useState<{ id: string; name: string; fill?: number; is_open?: boolean } | null>(null);
-  const [reportNote, setReportNote] = useState('');
 
-  const filteredBins = useMemo(() => {
+  const filteredPatients = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return bins.filter(bin => {
-      if (q && !bin.name.toLowerCase().includes(q)) return false;
-      if (selectedType !== 'all') {
-        const bt = (bin.bin_type || '').toString().toLowerCase();
-        if (bt !== selectedType) return false;
-      }
+    return patients.filter(patient => {
+      if (q && !patient.full_name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [bins, searchQuery, selectedType]);
+  }, [patients, searchQuery]);
 
   // Emit highlight ids for map markers
   useEffect(() => {
     if (!onSearchHighlightChange) return;
-    // Only compute ids when query changes (filteredBins already memoized)
-    const ids = searchQuery ? filteredBins.map(b=>b.id) : [];
+    // Only compute ids when query changes (filteredPatients already memoized)
+    const ids = searchQuery ? filteredPatients.map(p=>p.id) : [];
     onSearchHighlightChange(ids);
-  }, [searchQuery, filteredBins, onSearchHighlightChange]);
+  }, [searchQuery, filteredPatients, onSearchHighlightChange]);
 
   // Select helper
-  const selectBin = (bin: BinData) => {
-    onBinSelect(bin);
-    setSearchQuery(bin.name);
+  const selectPatient = (patient: PatientData) => {
+    onPatientSelect(patient);
+    setSearchQuery(patient.full_name);
     setShowSuggestions(false);
   };
 
-  // Allow map popup to request opening the report dialog
-  useEffect(() => {
-    const handler = (e: any) => {
-      const d = e?.detail;
-      if (!d || !d.id || !d.name) return;
-      setReportBin({ id: d.id, name: d.name, fill: d.fill, is_open: d.is_open });
-      setReportNote('');
-      setReportOpen(true);
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('bl:openReport' as any, handler as any);
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('bl:openReport' as any, handler as any);
-      }
-    };
-  }, []);
-
-  // Auto email report for thresholds (admin only). Use simple once-per-day gating via localStorage
-  useEffect(() => {
-    if (role !== 'admin' || !selectedBin) return;
-    const fill = typeof selectedBin.fill_pct === 'number' ? Math.round(selectedBin.fill_pct) : null;
-    if (fill == null) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const id = selectedBin.id;
-    const key = (thr: number) => `bl_email_${id}_${thr}_${today}`;
-    const send = async (thr: number) => {
-      try {
-        const res = await fetch(`/api/bins/${id}/send-report`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: 'auto', fill_pct: fill })
-        });
-        if (res.ok) localStorage.setItem(key(thr), '1');
-      } catch {}
-    };
-    if (fill >= 100 && !localStorage.getItem(key(100))) {
-      send(100);
-    } else if (fill >= 70 && !localStorage.getItem(key(70))) {
-      send(70);
-    }
-  }, [role, selectedBin]);
-
-  // Load today's fill trend for the selected bin from bin_metrics
+  // Load today's vitals trend for the selected patient from patient_vitals
   useEffect(() => {
     (async () => {
-      if (!selectedBin) { setTrendData([]); return; }
+      if (!selectedPatient) { setTrendData([]); return; }
       setTrendLoading(true);
       const sb = getSupabase();
       try {
@@ -151,35 +114,28 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
         start.setHours(0, 0, 0, 0);
         const startIso = start.toISOString();
 
-        // First try by bin_id
-        let rows: any[] = [];
-        if (selectedBin.id) {
-          const { data } = await sb
-            .from('bin_metrics')
-            .select('recorded_at, fill_pct, is_open')
-            .eq('bin_id', selectedBin.id)
-            .gte('recorded_at', startIso)
-            .order('recorded_at', { ascending: true });
-          rows = data || [];
-        }
-        // Fallback by bin_name if needed
-        if ((!rows || rows.length === 0) && selectedBin.name) {
-          const { data } = await sb
-            .from('bin_metrics')
-            .select('recorded_at, fill_pct, is_open')
-            .eq('bin_name', selectedBin.name)
-            .gte('recorded_at', startIso)
-            .order('recorded_at', { ascending: true });
-          rows = data || [];
-        }
+        const { data } = await sb
+          .from('patient_vitals')
+          .select('recorded_at, heart_rate, spo2, body_temp')
+          .eq('patient_id', selectedPatient.id)
+          .gte('recorded_at', startIso)
+          .order('recorded_at', { ascending: true });
 
-        const points = (rows || [])
-          .filter(r => typeof r.fill_pct === 'number' && isFinite(Number(r.fill_pct)))
+        const rows = data || [];
+        const points = rows
+          .filter(r => {
+            const val = activeChart === 'heart_rate' ? r.heart_rate : 
+                       activeChart === 'spo2' ? r.spo2 : 
+                       activeChart === 'body_temp' ? r.body_temp : null;
+            return val !== null && val !== undefined && isFinite(Number(val));
+          })
           .map(r => {
             const d = new Date(r.recorded_at);
             const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const v = Math.max(0, Math.min(100, Math.round(Number(r.fill_pct))));
-            return { time: label, fill: v };
+            const val = activeChart === 'heart_rate' ? Number(r.heart_rate) : 
+                       activeChart === 'spo2' ? Number(r.spo2) : 
+                       Number(r.body_temp);
+            return { time: label, value: Math.round(val * 10) / 10 };
           });
         setTrendData(points);
       } catch {
@@ -188,99 +144,25 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
         setTrendLoading(false);
       }
     })();
-  }, [selectedBin]);
+  }, [selectedPatient, activeChart]);
 
-  // AI Predictive Fill (Monthly): derive from bin_metrics across filtered bins
-  useEffect(() => {
-    (async () => {
-      try {
-        setMonthlyLoading(true);
-        const sb = getSupabase();
-        // Look back 30 days for bins in the filtered list
-        const since = new Date();
-        since.setDate(since.getDate() - 30);
-        const sinceIso = since.toISOString();
-        const names = filteredBins.map(b => b.name).filter(Boolean);
-        const ids = filteredBins.map(b => b.id).filter(Boolean);
-        let rows: any[] = [];
-        if (ids.length) {
-          const { data } = await sb
-            .from('bin_metrics')
-            .select('bin_id, bin_name, recorded_at, fill_pct')
-            .in('bin_id', ids as any)
-            .gte('recorded_at', sinceIso)
-            .order('recorded_at', { ascending: true });
-          rows = data || [];
-        }
-        // Fallback by name where id metrics missing
-        if (names.length) {
-          const { data } = await sb
-            .from('bin_metrics')
-            .select('bin_id, bin_name, recorded_at, fill_pct')
-            .in('bin_name', names as any)
-            .gte('recorded_at', sinceIso)
-            .order('recorded_at', { ascending: true });
-          rows = [...rows, ...(data || [])];
-        }
-
-        // Bucket by day, take latest per bin per day, then average across bins
-        const byDay: Record<string, { sum: number; count: number }> = {};
-        const seenPerBinDay = new Set<string>();
-        for (const r of rows) {
-          if (typeof r.fill_pct !== 'number') continue;
-          const d = new Date(r.recorded_at);
-          const keyDay = d.toISOString().slice(0, 10);
-          const key = `${r.bin_id || r.bin_name}::${keyDay}`;
-          if (seenPerBinDay.has(key)) continue; // earliest only to prevent double-counting per bin/day
-          seenPerBinDay.add(key);
-          const pct = Math.max(0, Math.min(100, Math.round(Number(r.fill_pct))));
-          byDay[keyDay] = byDay[keyDay] || { sum: 0, count: 0 };
-          byDay[keyDay].sum += pct;
-          byDay[keyDay].count += 1;
-        }
-
-        // Build an array for days 1..30 using today as reference; predict forward by simple carry + slight trend
-        const today = new Date();
-        const days: { day: number; predicted: number }[] = [];
-        let last = 0;
-        for (let i = 29; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(today.getDate() - i);
-          const keyDay = d.toISOString().slice(0, 10);
-          const avg = byDay[keyDay]?.count ? Math.round(byDay[keyDay].sum / byDay[keyDay].count) : last;
-          last = avg;
-          days.push({ day: d.getDate(), predicted: avg });
-        }
-        // Light smoothing: moving average
-        const smooth = (arr: number[]) => arr.map((v, i, a) => Math.round((a[Math.max(0, i-1)] ?? v + v + (a[i+1] ?? v)) / (a[Math.max(0, i-1)] != null && a[i+1] != null ? 3 : 1)));
-        const smoothed = smooth(days.map(d => d.predicted));
-        const final = days.map((d, i) => ({ day: d.day, predicted: Math.max(0, Math.min(100, smoothed[i])) }));
-        setMonthlyData(final);
-      } catch {
-        setMonthlyData([]);
-      } finally {
-        setMonthlyLoading(false);
-      }
-    })();
-  }, [filteredBins]);
-
-  const getMetricStatus = (value: number, type: 'ph' | 'tds' | 'temperature' | 'waterLevel') => {
+  const getMetricStatus = (value: number, type: 'heart_rate' | 'spo2' | 'body_temp' | 'room_temp') => {
     switch (type) {
-      case 'ph':
-        if (value >= 6.5 && value <= 8.5) return 'good';
-        if (value >= 6.0 && value <= 9.0) return 'warning';
+      case 'heart_rate':
+        if (value >= 60 && value <= 100) return 'good';
+        if (value >= 50 && value <= 120) return 'warning';
         return 'critical';
-      case 'tds':
-        if (value <= 300) return 'good';
-        if (value <= 500) return 'warning';
+      case 'spo2':
+        if (value >= 95) return 'good';
+        if (value >= 90) return 'warning';
         return 'critical';
-      case 'temperature':
-        if (value >= 15 && value <= 25) return 'good';
-        if (value >= 10 && value <= 30) return 'warning';
+      case 'body_temp':
+        if (value >= 36.1 && value <= 37.2) return 'good';
+        if (value >= 35.5 && value <= 38.0) return 'warning';
         return 'critical';
-      case 'waterLevel':
-        if (value >= 40) return 'good';
-        if (value >= 30) return 'warning';
+      case 'room_temp':
+        if (value >= 18 && value <= 24) return 'good';
+        if (value >= 15 && value <= 28) return 'warning';
         return 'critical';
       default:
         return 'good';
@@ -353,7 +235,7 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-5">
-                <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-white">Bin Monitor</h1>
+                <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-white">Palliative Care Dashboard</h1>
                 <ThemeToggle />
               </div>
 
@@ -366,20 +248,11 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                   <TabsTrigger className="data-[state=active]:bg-background dark:data-[state=active]:bg-background rounded-md text-[13px]" value="chat">AI Chatbot</TabsTrigger>
                 </TabsList>
 
-                {/* Admin filter for bin type */}
-                {role === 'admin' && (
-                  <div className="mb-3 flex gap-2">
-                    <Button size="sm" variant={selectedType==='all' ? 'default' : 'outline'} onClick={() => setSelectedType('all')}>All</Button>
-                    <Button size="sm" variant={selectedType==='private' ? 'default' : 'outline'} onClick={() => setSelectedType('private')}>Private</Button>
-                    <Button size="sm" variant={selectedType==='public' ? 'default' : 'outline'} onClick={() => setSelectedType('public')}>Public</Button>
-                  </div>
-                )}
-
                 {/* Search Bar */}
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
-                    placeholder="Search bins..."
+                    placeholder="Search patients..."
                     value={searchQuery}
                     onFocus={()=> setShowSuggestions(true)}
                     onBlur={(e)=> {
@@ -388,29 +261,29 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                     }}
                     onKeyDown={(e)=> {
                       if (e.key === 'Enter') {
-                        if (filteredBins.length === 1) {
-                          selectBin(filteredBins[0]);
-                        } else if (filteredBins.length > 1) {
-                          selectBin(filteredBins[0]);
+                        if (filteredPatients.length === 1) {
+                          selectPatient(filteredPatients[0]);
+                        } else if (filteredPatients.length > 1) {
+                          selectPatient(filteredPatients[0]);
                         }
                       }
                     }}
                     onChange={(e) => {setSearchQuery(e.target.value); setShowSuggestions(true);} }
                     className="pl-10 h-10 text-sm rounded-full border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-secondary/60 focus-visible:ring-0 focus:border-gray-300 dark:focus:border-gray-600"
                   />
-                  {showSuggestions && searchQuery && filteredBins.length > 0 && (
+                  {showSuggestions && searchQuery && filteredPatients.length > 0 && (
                     <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-900/95 border border-border/70 dark:border-border rounded-xl shadow-xl overflow-hidden z-40 animate-in fade-in-0 zoom-in-95">
                       <ul className="max-h-56 overflow-auto py-1 text-sm">
-                        {filteredBins.map(w => (
-                          <li key={w.id}>
+                        {filteredPatients.map(p => (
+                          <li key={p.id}>
                             <button
                               type="button"
                               onMouseDown={(e)=> e.preventDefault()}
-                              onClick={()=> selectBin(w)}
-                              className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-muted/60 dark:hover:bg-muted/40 transition-colors ${selectedBin?.id===w.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                              onClick={()=> selectPatient(p)}
+                              className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-muted/60 dark:hover:bg-muted/40 transition-colors ${selectedPatient?.id===p.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
                             >
-                              <span className="truncate pr-3">{w.name}</span>
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${w.status==='active'?'bg-emerald-400': w.status==='warning'?'bg-amber-400': w.status==='critical'?'bg-red-400':'bg-gray-400'}`}></span>
+                              <span className="truncate pr-3">{p.full_name}</span>
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${p.emergency || p.status==='emergency'?'bg-red-400 animate-pulse': p.status==='critical'?'bg-red-400': p.status==='warning'?'bg-amber-400':'bg-emerald-400'}`}></span>
                             </button>
                           </li>
                         ))}
@@ -421,72 +294,89 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
 
                 <TabsContent value="dashboard" className="flex-1 overflow-auto space-y-4">
                   {/* Summary Metrics */}
-                  {selectedBin && (
+                  {selectedPatient && (
                     <>
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                         <CardHeader className="pb-1">
-                          <CardTitle className="text-base font-semibold tracking-tight">{selectedBin.name}</CardTitle>
+                          <CardTitle className="text-base font-semibold tracking-tight flex items-center gap-2">
+                            <Heart className="h-4 w-4 text-red-500" />
+                            {selectedPatient.full_name}
+                          </CardTitle>
                           <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Last updated: {(selectedBin.updated_at ?? selectedBin.data.lastUpdated).toLocaleTimeString()}
+                            Last updated: {new Date(selectedPatient.last_updated).toLocaleTimeString()}
                           </p>
                         </CardHeader>
                         <CardContent className="space-y-3 pt-2">
                           <div className="grid grid-cols-2 gap-2.5">
-                            {(() => {
-                              // Prefer real fill_pct; fallback to derived tds mapping
-                              const pct = typeof selectedBin.fill_pct === 'number'
-                                ? Math.max(0, Math.min(100, Math.round(selectedBin.fill_pct)))
-                                : (() => { const tds = Number(selectedBin.data?.tds ?? NaN); return isFinite(tds) ? Math.max(0, Math.min(100, Math.round(((tds - 200) / 600) * 100))) : 0; })();
-                              return (
-                                <MetricCard
-                                  label="Bin Level"
-                                  value={pct.toString()}
-                                  unit="%"
-                                  status={pct < 70 ? 'good' : pct < 90 ? 'warning' : 'critical'}
-                                  icon={<Gauge className="h-4 w-4" />}
-                                  onClick={() => setActiveChart('tds')}
-                                  isActive={activeChart === 'tds'}
-                                />
-                              );
-                            })()}
-                            {(() => {
-                              const isOffline = selectedBin.status === 'offline';
-                              const isOpen = typeof selectedBin.is_open === 'boolean' ? selectedBin.is_open : (selectedBin.status !== 'active');
-                              const value = isOffline ? 'Offline' : (isOpen ? 'Open' : 'Closed');
-                              const s = isOffline ? 'warning' : (isOpen ? 'critical' : 'good');
-                              return (
-                                <MetricCard
-                                  label="Status"
-                                  value={value}
-                                  unit=""
-                                  status={s as any}
-                                  icon={<Gauge className="h-4 w-4" />}
-                                  onClick={() => setActiveChart('tds')}
-                                  isActive={false}
-                                  align="center"
-                                />
-                              );
-                            })()}
+                            {selectedPatient.heart_rate != null && (
+                              <MetricCard
+                                label="Heart Rate"
+                                value={String(selectedPatient.heart_rate)}
+                                unit="bpm"
+                                status={getMetricStatus(selectedPatient.heart_rate, 'heart_rate')}
+                                icon={<Activity className="h-4 w-4" />}
+                                onClick={() => setActiveChart('heart_rate')}
+                                isActive={activeChart === 'heart_rate'}
+                              />
+                            )}
+                            {selectedPatient.spo2 != null && (
+                              <MetricCard
+                                label="SpO₂"
+                                value={String(selectedPatient.spo2)}
+                                unit="%"
+                                status={getMetricStatus(selectedPatient.spo2, 'spo2')}
+                                icon={<Droplets className="h-4 w-4" />}
+                                onClick={() => setActiveChart('spo2')}
+                                isActive={activeChart === 'spo2'}
+                              />
+                            )}
+                            {selectedPatient.body_temp != null && (
+                              <MetricCard
+                                label="Body Temp"
+                                value={(Number(selectedPatient.body_temp)).toFixed(1)}
+                                unit="°C"
+                                status={getMetricStatus(selectedPatient.body_temp, 'body_temp')}
+                                icon={<Thermometer className="h-4 w-4" />}
+                                onClick={() => setActiveChart('body_temp')}
+                                isActive={activeChart === 'body_temp'}
+                              />
+                            )}
+                            {selectedPatient.room_temp != null && (
+                              <MetricCard
+                                label="Room Temp"
+                                value={(Number(selectedPatient.room_temp)).toFixed(1)}
+                                unit="°C"
+                                status={getMetricStatus(selectedPatient.room_temp, 'room_temp')}
+                                icon={<Thermometer className="h-4 w-4" />}
+                                onClick={() => setActiveChart('room_temp')}
+                                isActive={activeChart === 'room_temp'}
+                              />
+                            )}
                           </div>
+                          {selectedPatient.fall_detected && (
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-sm text-red-600 dark:text-red-400 font-medium">
+                              ⚠ Fall Detected!
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
-                      {/* Trend Section: Fill % today for selected bin */}
+                      {/* Trend Section: Vitals today for selected patient */}
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-base font-semibold tracking-tight">Trends</CardTitle>
+                          <CardTitle className="text-base font-semibold tracking-tight">Vital Signs Trend</CardTitle>
                         </CardHeader>
                         <CardContent className="pt-1 pb-3">
                           {trendLoading ? (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading today&#39;s fill trend…</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading today&#39;s vitals…</div>
                           ) : trendData.length ? (
                             <div className="h-40">
-                              <ChartContainer config={{ fill: { label: 'Fill %', color: 'hsl(142 72% 29%)' } }}>
+                              <ChartContainer config={{ value: { label: activeChart.replace('_', ' '), color: 'hsl(142 72% 29%)' } }}>
                                 <ResponsiveContainer>
                                   <LineChart data={trendData} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
                                     <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                                    <Line type="monotone" dataKey="fill" stroke="var(--color-fill)" strokeWidth={2} dot={false} />
+                                    <YAxis tick={{ fontSize: 10 }} />
+                                    <Line type="monotone" dataKey="value" stroke="var(--color-value)" strokeWidth={2} dot={false} />
                                     <ChartTooltip content={<ChartTooltipContent />} />
                                     <ChartLegend content={<ChartLegendContent />} />
                                   </LineChart>
@@ -501,56 +391,39 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                     </>
                   )}
 
-                  {/* Bins List */}
+                  {/* Patients List */}
                   <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold tracking-tight">Bins Overview</CardTitle>
+                      <CardTitle className="text-base font-semibold tracking-tight">Patients Overview</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-1.5 max-h-56 overflow-auto pr-1 custom-scrollbar">
-                        {filteredBins.map((bin) => (
+                        {filteredPatients.map((patient) => (
                           <motion.div
-                            key={bin.id}
+                            key={patient.id}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                           >
                             <Button
-                              variant={selectedBin?.id === bin.id ? 'default' : 'ghost'}
+                              variant={selectedPatient?.id === patient.id ? 'default' : 'ghost'}
                               className="w-full justify-start px-3 py-2 h-auto rounded-lg text-sm"
-                              onClick={() => selectBin(bin)}
+                              onClick={() => selectPatient(patient)}
                             >
                               <div className="flex items-center justify-between w-full gap-2">
                                 <div className="text-left min-w-0">
-                                  <p className="font-medium truncate leading-tight">{bin.name}</p>
+                                  <p className="font-medium truncate leading-tight">{patient.full_name}</p>
                                   <p className="text-[11px] text-emerald-600 dark:text-emerald-300 leading-snug">
-                                    {(() => {
-                                      const pct = typeof bin.fill_pct === 'number'
-                                        ? Math.max(0, Math.min(100, Math.round(Number(bin.fill_pct))))
-                                        : (() => { const t = Number(bin.data?.tds ?? NaN); return isFinite(t) ? Math.max(0, Math.min(100, Math.round(((t - 200) / 600) * 100))) : null; })();
-                                      const pctText = pct == null ? 'N/A' : `${pct}%`;
-                                      const lid = typeof bin.is_open === 'boolean' ? (bin.is_open ? 'Open' : 'Closed') : (bin.status === 'offline' ? '—' : 'Unknown');
-                                      const statusText = bin.status === 'offline' ? 'Offline' : 'Online';
-                                      return `Level ${pctText} • ${statusText} • Lid ${lid}`;
-                                    })()}
+                                    {patient.heart_rate != null ? `HR: ${patient.heart_rate} bpm` : ''}
+                                    {patient.spo2 != null ? ` • SpO₂: ${patient.spo2}%` : ''}
+                                    {patient.body_temp != null ? ` • ${Number(patient.body_temp).toFixed(1)}°C` : ''}
                                   </p>
                                 </div>
                                 <div className={`w-3 h-3 rounded-full shrink-0 ${
-                                  bin.status === 'active' ? 'bg-green-500' :
-                                  bin.status === 'warning' ? 'bg-yellow-500' :
-                                  bin.status === 'critical' ? 'bg-red-500' :
-                                  'bg-gray-500'
+                                  patient.emergency || patient.status === 'emergency' ? 'bg-red-500 animate-pulse' :
+                                  patient.status === 'critical' ? 'bg-red-500' :
+                                  patient.status === 'warning' ? 'bg-yellow-500' :
+                                  'bg-green-500'
                                 }`} />
-                                {role === 'admin' && (
-                                  <Button size="icon" variant="ghost" className="ml-1 h-8 w-8 shrink-0 hover:bg-muted/60 dark:hover:bg-muted/40"
-                                    title="Send report"
-                                    onClick={(e) => { e.stopPropagation(); setReportBin({ id: bin.id, name: bin.name, fill: typeof bin.fill_pct==='number'?Math.round(bin.fill_pct):undefined, is_open: typeof bin.is_open==='boolean'?bin.is_open:undefined }); setReportNote(''); setReportOpen(true); }}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                                      <path d="M2.25 4.5A2.25 2.25 0 0 1 4.5 2.25h15a2.25 2.25 0 0 1 2.25 2.25v15a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 19.5v-15Z"/>
-                                      <path d="M7.5 8.25h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5Zm0 3h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5Zm0 3h6a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5Z" fill="#fff"/>
-                                    </svg>
-                                  </Button>
-                                )}
                               </div>
                             </Button>
                           </motion.div>
@@ -558,107 +431,45 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
                       </div>
                     </CardContent>
                   </Card>
-                </TabsContent>
-
-                <TabsContent value="analytics" className="flex-1 overflow-auto space-y-4">
+                </TabsContent>                <TabsContent value="analytics" className="flex-1 overflow-auto space-y-4">
                       <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base font-semibold tracking-tight">System Analytics</CardTitle>
+                      <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-semibold tracking-tight">Patient Analytics</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                           <p className="text-xl font-bold text-blue-600 dark:text-blue-400 leading-tight">
-                            {bins.length}
+                            {patients.length}
                           </p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Bins</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Patients</p>
                         </div>
                         <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                           <p className="text-xl font-bold text-green-600 dark:text-green-400 leading-tight">
-                            {bins.filter((w) => w.status === 'active').length}
+                            {patients.filter((p) => p.status === 'normal').length}
                           </p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">Closed</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Stable</p>
                         </div>
                         <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                           <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400 leading-tight">
-                            {bins.filter((w) => w.status === 'warning' || w.status === 'critical').length}
+                            {patients.filter((p) => p.status === 'warning' || p.status === 'critical').length}
                           </p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">Open</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Needs Attention</p>
                         </div>
                         <div className="text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
                           <p className="text-xl font-bold text-red-600 dark:text-red-400 leading-tight">
-                            {bins.filter((w) => w.status === 'offline').length}
+                            {patients.filter((p) => p.emergency || p.status === 'emergency').length}
                           </p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">Offline</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Emergency</p>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                  {/* AI Predictive Graph (monthly) - placeholder using current data */}
-                  <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold tracking-tight">AI Predictive Fill (Monthly)</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-1">
-                      <div className="h-48">
-                        <ChartContainer config={{ predicted: { label: 'Predicted', color: 'hsl(200 98% 39%)' } }}>
-                          <ResponsiveContainer>
-                            <LineChart data={monthlyData} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                              <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                              <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" strokeWidth={2} dot={false} />
-                              <ChartTooltip content={<ChartTooltipContent />} />
-                              <ChartLegend content={<ChartLegendContent />} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </ChartContainer>
-                      </div>
-                      {monthlyLoading && (
-                        <div className="mt-1 text-[11px] text-muted-foreground">Loading…</div>
-                      )}
-                    </CardContent>
-                  </Card>
-                  {/* Overall bins graph */}
-                  <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold tracking-tight">Overall Bin Levels</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-1">
-                      {(() => {
-                        const data = bins.map((w: BinData) => {
-                          const level = typeof w.fill_pct === 'number'
-                            ? Math.max(0, Math.min(100, Math.round(w.fill_pct)))
-                            : (() => { const t = Number(w.data?.tds ?? NaN); return isFinite(t) ? Math.max(0, Math.min(100, Math.round(((t - 200) / 600) * 100))) : 0; })();
-                          return {
-                            name: w.name.length > 10 ? w.name.slice(0, 10) + '…' : w.name,
-                            level
-                          };
-                        });
-                        return (
-                          <div className="h-48">
-                            <ChartContainer config={{ level: { label: 'Level', color: 'hsl(142 72% 29%)' } }}>
-                              <ResponsiveContainer>
-                                <LineChart data={data} margin={{ left: 6, right: 6, top: 6, bottom: 0 }}>
-                                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                                  <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} height={50} />
-                                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                                  <Line type="monotone" dataKey="level" stroke="var(--color-level)" strokeWidth={2} dot={false} />
-                                  <ChartTooltip content={<ChartTooltipContent />} />
-                                  <ChartLegend content={<ChartLegendContent />} />
-                                </LineChart>
-                              </ResponsiveContainer>
-                            </ChartContainer>
-                          </div>
-                        );
-                      })()}
                     </CardContent>
                   </Card>
                 </TabsContent>
 
                 {/* Route Planner Tab */}
                 <TabsContent value="route" className="flex-1 overflow-auto space-y-4">
-                  <RoutePlanner bins={bins} />
+                  <RoutePlanner patients={patients} />
                 </TabsContent>
 
                 {/* AI Chatbot Tab */}
@@ -672,57 +483,6 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
             </motion.div>
           )}
         </AnimatePresence>
-        {/* Admin: Send Report Dialog */}
-        <Dialog open={reportOpen} onOpenChange={(open) => { setReportOpen(open); if (!open) { setReportBin(null); setReportNote(''); } }}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Send report{reportBin ? ` — ${reportBin.name}` : ''}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  This email will be sent to the bin owner with the latest status. You can include an optional note.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Note</label>
-                <Textarea
-                  value={reportNote}
-                  onChange={(e) => setReportNote(e.target.value)}
-                  placeholder="Add any notes or instructions…"
-                  className="min-h-[96px] text-sm"
-                />
-              </div>
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="ghost" onClick={() => { setReportOpen(false); setReportBin(null); setReportNote(''); }}>Cancel</Button>
-              <Button
-                onClick={async () => {
-                  if (!reportBin) { setReportOpen(false); return; }
-                  try {
-                    const res = await fetch(`/api/bins/${reportBin.id}/send-report`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ reason: 'manual', note: reportNote || undefined, fill_pct: reportBin.fill, is_open: reportBin.is_open })
-                    });
-                    if (!res.ok) {
-                      const msg = await res.text();
-                      console.error('Report send failed:', msg);
-                    }
-                  } catch (err) {
-                    console.error('Report send error:', err);
-                  } finally {
-                    setReportOpen(false);
-                    setReportBin(null);
-                    setReportNote('');
-                  }
-                }}
-              >
-                Send report
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
         </div>
       </motion.div>
     </div>
@@ -732,9 +492,9 @@ export function Sidebar({ bins, selectedBin, onBinSelect, onSearchHighlightChang
 // --- Helper Components Added Below ---
 // (useEffect already imported at top)
 
-interface RoutePlannerProps { bins: BinData[] }
+interface RoutePlannerProps { patients: PatientData[] }
 
-function RoutePlanner({ bins }: RoutePlannerProps) {
+function RoutePlanner({ patients }: RoutePlannerProps) {
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [optLink, setOptLink] = useState<string | null>(null);
@@ -762,16 +522,16 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
   };
 
   const distances = position
-    ? bins.map(b => ({
-        bin: b,
-        distanceKm: haversine(position.coords.latitude, position.coords.longitude, b.location.lat, b.location.lng)
+    ? patients.map(p => ({
+        patient: p,
+        distanceKm: haversine(position.coords.latitude, position.coords.longitude, p.lat, p.lng)
       }))
     : [];
 
   // Simple nearest-neighbor route (placeholder for full TSP) starting at user position
   const routeOrder = () => {
-    if (!position || bins.length === 0) return [] as { name: string; distanceFromPrev: number }[];
-    const remaining = [...bins];
+    if (!position || patients.length === 0) return [] as { name: string; distanceFromPrev: number }[];
+    const remaining = [...patients];
     let currentLat = position.coords.latitude;
     let currentLng = position.coords.longitude;
     const order: { name: string; distanceFromPrev: number }[] = [];
@@ -779,12 +539,12 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
       let bestIdx = 0;
       let bestDist = Infinity;
       for (let i = 0; i < remaining.length; i++) {
-        const d = haversine(currentLat, currentLng, remaining[i].location.lat, remaining[i].location.lng);
+        const d = haversine(currentLat, currentLng, remaining[i].lat, remaining[i].lng);
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       }
       const next = remaining.splice(bestIdx, 1)[0];
-      order.push({ name: next.name, distanceFromPrev: bestDist });
-      currentLat = next.location.lat; currentLng = next.location.lng;
+      order.push({ name: next.full_name, distanceFromPrev: bestDist });
+      currentLat = next.lat; currentLng = next.lng;
     }
     return order;
   };
@@ -795,18 +555,13 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
   useEffect(() => {
     if (!position || order.length === 0) { setOptLink(null); return; }
     // Build Google Maps directions URL: origin -> waypoints -> destination (last)
-    // If only one bin: origin user position to that bin.
+    // If only one patient: origin user position to that patient.
     const origin = `${position.coords.latitude},${position.coords.longitude}`;
     const coordsList: string[] = [];
-    let prevLat = position.coords.latitude;
-    let prevLng = position.coords.longitude;
-    let totalKm = 0;
     order.forEach(o => {
-      const b = bins.find(bn => bn.name === o.name);
-      if (b) {
-        coordsList.push(`${b.location.lat},${b.location.lng}`);
-        totalKm += o.distanceFromPrev;
-        prevLat = b.location.lat; prevLng = b.location.lng;
+      const p = patients.find(pt => pt.full_name === o.name);
+      if (p) {
+        coordsList.push(`${p.lat},${p.lng}`);
       }
     });
     if (!coordsList.length) { setOptLink(null); return; }
@@ -817,7 +572,7 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
       ? `${base}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&waypoints=${encodeURIComponent(waypoints)}&travelmode=driving`
       : `${base}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
     setOptLink(url);
-  }, [order, position, bins]);
+  }, [order, position, patients]);
 
   const estimatedMinutes = (totalDistance / 40) * 60; // crude avg 40km/h
 
@@ -825,7 +580,7 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
   <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm">
       <CardHeader className="pb-2">
   <CardTitle className="text-base font-semibold tracking-tight">Route</CardTitle>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Shortest greedy path suggestion with live distance. Open in Google Maps for navigation.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Visit patients in optimal order. Open in Google Maps for navigation.</p>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {!position && !error && (
@@ -840,8 +595,8 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
         {position && distances.length > 0 && (
           <div className="space-y-1">
             {distances.map(d => (
-              <div key={d.bin.id} className="flex items-center justify-between rounded-md px-2 py-1 bg-gray-100/70 dark:bg-gray-900/40">
-                <span className="font-medium text-gray-800 dark:text-gray-200">{d.bin.name}</span>
+              <div key={d.patient.id} className="flex items-center justify-between rounded-md px-2 py-1 bg-gray-100/70 dark:bg-gray-900/40">
+                <span className="font-medium text-gray-800 dark:text-gray-200">{d.patient.full_name}</span>
                 <span className="text-xs text-gray-600 dark:text-gray-400">{d.distanceKm.toFixed(2)} km</span>
               </div>
             ))}
@@ -865,9 +620,9 @@ function RoutePlanner({ bins }: RoutePlannerProps) {
             )}
           </div>
         )}
-        {position && bins.length <= 1 && (
+        {position && patients.length <= 1 && (
           <>
-            <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more bins to compute multi-stop routes.</div>
+            <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Add more patients to compute multi-stop routes.</div>
           </>
         )}
       </CardContent>
@@ -879,7 +634,7 @@ interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
 function AIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-  { role: 'assistant', content: 'Hi! I\'m your BinLink AI assistant. Ask me about bin fill levels, status, or get a quick summary.' }
+    { role: 'assistant', content: 'Hi! I\'m your Palliative Care assistant. Ask me about patient status, vitals, or get a quick summary.' }
   ]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -932,11 +687,11 @@ function AIChat() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch('/api/chat?stream=1', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: base.slice(-10), stream: true })
+        body: JSON.stringify({ messages: base.slice(-10), stream: false })
       });
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
@@ -947,25 +702,14 @@ function AIChat() {
         const html = await res.text();
         throw new Error('Server returned HTML (likely build config / dynamic route issue).');
       }
-      if (!res.body) throw new Error('No stream body');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-      let assistantText = '';
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-            assistantText += chunk;
-            setMessages(prev => {
-              const copy = [...prev];
-              // last message is assistant placeholder
-              copy[copy.length - 1] = { role: 'assistant', content: assistantText };
-              return copy;
-            });
-        }
-      }
+      // Non-streaming mode: get the full response text
+      const assistantText = await res.text();
+      setMessages(prev => {
+        const copy = [...prev];
+        // Update the last message (assistant placeholder) with the full response
+        copy[copy.length - 1] = { role: 'assistant', content: assistantText };
+        return copy;
+      });
     } catch (e: any) {
       if (e.name === 'AbortError') {
         setMessages(prev => {
@@ -992,7 +736,7 @@ function AIChat() {
   <Card className="bg-card/90 dark:bg-card/90 backdrop-blur-sm border border-gray-200/60 dark:border-gray-800/60 shadow-sm flex flex-col flex-1 min-h-0 h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-semibold tracking-tight">AI Chatbot</CardTitle>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Gemini powered assistant. Streaming enabled.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Gemini powered assistant.</p>
       </CardHeader>
   <CardContent className="flex-1 flex flex-col min-h-0 p-4">
         <div ref={scrollRef} className="flex-1 overflow-y-auto pr-1 space-y-3 aichat-scroll-visible min-h-0 pb-24">

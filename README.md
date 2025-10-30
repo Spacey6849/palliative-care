@@ -1,4 +1,4 @@
-# BinLink AI – Smart Bin Management
+# Palliative Care – Remote Patient Monitoring
 
 ## Aim
 
@@ -6,7 +6,7 @@ Empower local governments and communities to monitor, manage, and optimize bin c
 
 ## Quick project summary
 
-BinLink is a Next.js + Supabase application that visualizes real-time bin metrics, supports admin/user roles, and sends automated emails for lid-open alerts and report generation. It includes an AI assistant for quick bin queries and a predictive fill chart driven by historical metrics.
+Palliative Care is a Next.js + Supabase application for real-time remote monitoring of patients. It ingests ESP32-based sensor data (MAX30102, DS18B20, DHT11, AD8232, MPU6050), tracks patient geolocation on a Leaflet map, detects emergencies (low SpO2, abnormal heart rate, falls), and provides dashboards, historical trends, alerts, and analytics. It supports role-based access, exportable reports, and AI-assisted insights for caregivers.
 
 ## Tech stack
 
@@ -16,17 +16,19 @@ BinLink is a Next.js + Supabase application that visualizes real-time bin metric
 - Realtime: Supabase Realtime subscriptions for soft UI refresh
 - Mailer: Nodemailer + SMTP
 - Mapping & Charts: Leaflet/react-leaflet and Recharts
-- AI: Gemini (via server grounding) for the chat assistant
+- AI: Gemini (via server grounding) for the caregiver assistant
 - Hosting: Netlify (preview/deploy) or Vercel; keep service-role key server-side
 
 ## Key features
 
-- Interactive map with live bin markers and popups
-- Real-time metrics (fill %, lid open/closed, online/offline)
-- Role-based UI (admin vs user); admin filters for Private/Public bins
-- AI Chat assistant (Gemini) with structured bin grounding
-- Email alerts: verification, password reset, lid-open alerts, manual bin reports
-- Realtime subscriptions to update UI without full reloads
+- Core Monitoring: HR, SpO2, body temp, room temp/humidity, ECG, fall detection
+- Geospatial: interactive map of patient locations with popups and status colors
+- Emergency Alerts: automated detection and notifications for critical events
+- Dashboard: sidebar patient list with search/filter/sort, last-updated timestamps
+- Trends & Analytics: historical vitals charts and aggregate summaries
+- Auth & RBAC: user authentication, admin views, protected routes
+- Reporting: alerts history and CSV export
+- AI: symptom risk hints, anomaly notes, caregiver Q&A
 
 ## Quickstart (local)
 
@@ -46,7 +48,7 @@ notepad .env.local
 Minimum env values:
 
 ```ini
-# For production, set to your deployed origin (no path): e.g. https://binlinkai.netlify.app
+# For production, set to your deployed origin (no path): e.g. https://palliativecare.example.com
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
@@ -56,7 +58,7 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=465
 SMTP_USER=your-user
 SMTP_PASS=your-pass
-MAIL_FROM="BinLink <noreply@example.com>"
+MAIL_FROM="Palliative Care <noreply@example.com>"
 
 CRON_SECRET=supersecretvalue
 GEMINI_API_KEY=your-gemini-key (optional)
@@ -84,19 +86,19 @@ Open http://localhost:3000
 - Mailer helpers: `lib/mailer.ts`
 - Supabase client: `lib/supabase/client.ts`
 
-## Lid-open alerts (cron)
+## Alerts (cron)
 
-- Endpoint: `GET|POST /api/cron/lid-open-alerts`
+- Example pattern: `GET|POST /api/cron/emergency-alerts`
 - Requires header: `x-cron-secret: $CRON_SECRET`
-- Behavior: scans `bin_metrics` for lid_open=true with a recorded_at older than 2 minutes and emails the owner. If `bin_alerts` table exists, the route will use it to backoff (default 30 minutes).
+- Behavior: scans recent vitals for critical thresholds to notify caregivers and backoff appropriately.
 
-## Sending manual bin reports
+## Sending manual patient alerts
 
-- Admins can send a manual report from the dashboard or from the map popup. This calls `POST /api/bins/[id]/send-report` with optional `note`, `reason`, and latest fill/is_open values.
+- Admins can trigger a manual emergency flag or send a report from the dashboard or map popup.
 
-## Predictive Fill
+## Predictive insights
 
-- The “AI Predictive Fill (Monthly)” chart in the dashboard uses the last 30 days of `bin_metrics` for the currently filtered bins to derive a daily average and a smoothed prediction.
+- The dashboard can surface risk trends from recent vitals to help anticipate adverse events.
 
 ## Troubleshooting
 
@@ -113,5 +115,4 @@ Open http://localhost:3000
 
 ## Developer notes
 
-- Cookie: `bl_session` is used for user sessions. Clear cookies when switching environments.
-- The app prefers `bin_metrics.bin_id` joins with a fallback on `bin_name` to help during migration.
+- Session cookie and schema details may vary based on your deployment.

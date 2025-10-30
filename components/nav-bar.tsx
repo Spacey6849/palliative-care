@@ -21,8 +21,9 @@ type NavLink = {
 const links: NavLink[] = [
   { href: "/home", label: "Home" },
   { href: "/maps", label: "Map" },
-  // Setup handled via custom button (still kept for mapping consistency but rendered differently)
-  { href: "/setup/bins", label: "Setup" },
+  { href: "/patients", label: "Patients" },
+  // Setup now points to /setup (patient registration)
+  { href: "/setup", label: "Setup" },
   { href: "/auth?mode=login", label: "Login", mode: "login" },
   { href: "/auth?mode=signup", label: "Sign Up", accent: true, mode: "signup" }
 ];
@@ -49,7 +50,7 @@ export function NavBar() {
         <nav className={`pointer-events-auto relative flex items-center justify-between gap-3 sm:gap-5 rounded-2xl sm:rounded-3xl px-4 sm:px-5 h-12 backdrop-blur-2xl border transition-colors
           ${profileDarkOverride ? 'bg-neutral-900/85 supports-[backdrop-filter]:bg-neutral-900/75 border-neutral-700/70 shadow-[0_8px_28px_-10px_rgba(0,0,0,0.80)]' : 'bg-white/95 supports-[backdrop-filter]:bg-white/80 dark:bg-neutral-900/80 supports-[backdrop-filter]:dark:bg-neutral-900/70 border-gray-200 dark:border-neutral-700/70 shadow-[0_4px_20px_-6px_rgba(0,0,0,0.10)] dark:shadow-[0_8px_28px_-10px_rgba(0,0,0,0.80)]'} `}>
           <div className="flex items-center gap-2 font-semibold tracking-tight text-[15px] select-none">
-            <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 dark:from-primary dark:via-primary/80 dark:to-primary/60 bg-clip-text text-transparent drop-shadow-sm">BinLink AI</span>
+            <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 dark:from-primary dark:via-primary/80 dark:to-primary/60 bg-clip-text text-transparent drop-shadow-sm">Palliative Care</span>
           </div>
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-1 md:gap-2">
@@ -69,9 +70,9 @@ export function NavBar() {
                 active = safePathname === "/home";
               } else if (basePath === "/maps") {
                 active = safePathname === "/maps";
-              } else if (basePath === "/setup/bins") {
-                // Mark active for /setup/bins and any deeper sub-routes under it.
-                active = safePathname === "/setup/bins" || safePathname.startsWith("/setup/bins/");
+              } else if (basePath === "/setup") {
+                // Mark active for /setup and any deeper sub-routes under it.
+                active = safePathname === "/setup" || safePathname.startsWith("/setup/");
               } else {
                 active = safePathname === basePath;
               }
@@ -81,7 +82,7 @@ export function NavBar() {
                 ? "text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700"
                 : profileDarkOverride ? "text-gray-300 hover:text-white hover:bg-white/5" : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5";
               // Custom rendering for Setup to ensure navigation always works even if link default prevented.
-              if (l.href === '/setup/bins') {
+              if (l.href === '/setup') {
                 return (
                   <button
                     key={l.href + l.label}
@@ -92,17 +93,17 @@ export function NavBar() {
                       console.log('Setup button clicked!', { pathname: safePathname, target: '/setup/bins' });
                       try {
                         e.stopPropagation();
-                        if (safePathname !== '/setup/bins') {
-                          console.log('Navigating to /setup/bins');
-                          router.push('/setup/bins');
+                        if (safePathname !== '/setup') {
+                          console.log('Navigating to /setup');
+                          router.push('/setup');
                         } else {
-                          console.log('Already on /setup/bins, refreshing');
+                          console.log('Already on /setup, refreshing');
                           router.refresh();
                         }
                       } catch (error) {
                         console.error('Navigation error:', error);
                         // Fallback to window location
-                        window.location.href = '/setup/bins';
+                        window.location.href = '/setup';
                       }
                     }}
                   >
@@ -207,8 +208,8 @@ export function NavBar() {
                 active = safePathname === '/home';
               } else if (basePath === '/maps') {
                 active = safePathname === '/maps';
-              } else if (basePath === '/setup/bins') {
-                active = safePathname === '/setup/bins' || safePathname.startsWith('/setup/bins/');
+              } else if (basePath === '/setup') {
+                active = safePathname === '/setup' || safePathname.startsWith('/setup/');
               } else { active = safePathname === basePath; }
               if (l.mode === 'signup') return null; // signup handled separately
               if (user && l.mode === 'login') return null; // hide login if authenticated
@@ -221,11 +222,11 @@ export function NavBar() {
                   >Login</button>
                 );
               }
-              if (l.href === '/setup/bins') {
+              if (l.href === '/setup') {
                 return (
                   <button
                     key={l.href}
-                    onClick={()=> { router.push('/setup/bins'); }}
+                    onClick={()=> { router.push('/setup'); }}
                     className={`text-left px-3 py-2 rounded-lg text-sm font-medium ${active ? (profileDarkOverride ? 'bg-white/10 text-white' : 'bg-primary/10 text-gray-900 dark:text-white') : (profileDarkOverride ? 'text-gray-300 hover:bg-white/5 hover:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10')}`}
                   >Setup</button>
                 );

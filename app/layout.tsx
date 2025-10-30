@@ -12,8 +12,8 @@ import AppBackground from '@/components/app-background';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'BinLink AI – Smart Bin Monitoring',
-  description: 'BinLink AI: real-time smart garbage bin monitoring with interactive mapping',
+  title: 'Palliative Care – Remote Patient Monitoring',
+  description: 'Real-time palliative care monitoring with vitals, alerts, and interactive mapping',
   viewport: 'width=device-width,initial-scale=1,maximum-scale=1'
 };
 
@@ -44,7 +44,7 @@ export default function RootLayout({
           </UserProvider>
         </ThemeProvider>
         <noscript>
-          <div style={{padding:'1rem',textAlign:'center',fontSize:'0.85rem'}}>BinLink AI requires JavaScript for interactive maps and theming.</div>
+          <div style={{padding:'1rem',textAlign:'center',fontSize:'0.85rem'}}>Palliative Care app requires JavaScript for interactive maps and theming.</div>
         </noscript>
       </body>
     </html>

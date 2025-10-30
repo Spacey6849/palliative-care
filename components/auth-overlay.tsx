@@ -26,7 +26,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("login");
   const [roleChoice, setRoleChoice] = useState<'admin' | 'owner'>('owner');
-  const [binCategory, setBinCategory] = useState<'private'|'public'>('private');
+  // Removed legacy bin category; not used in palliative care auth
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Supabase removed; using custom REST endpoints
@@ -81,7 +81,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
               </div>
               <header className="mb-8 text-center">
                 <h1 className={`text-3xl font-bold tracking-tight ${isDark ? '' : 'text-gray-900'}`}>{mode === 'login' ? 'Welcome Back!' : 'Create Account'}</h1>
-                <p className={`mt-2 text-sm ${isDark ? 'text-white/70' : 'text-gray-600'}`}>{mode === 'login' ? 'Sign in to continue your journey.' : 'Join us and explore the world.'}</p>
+                <p className={`mt-2 text-sm ${isDark ? 'text-white/70' : 'text-gray-600'}`}>{mode === 'login' ? 'Sign in to continue.' : 'Create your caregiver account to access the dashboard.'}</p>
               </header>
               <div className="relative min-h-[320px]">
                 {/* Login */}
@@ -166,7 +166,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                     if (!/^[a-z0-9_\.]{3,24}$/.test(username)) { setError('Username must be 3-24 chars, lowercase letters, numbers, underscore or dot.'); setSubmitting(false); return; }
                     try {
                       const normalizedPhone = phone.replace(/[\s\-()]/g, '');
-                      const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, location, bin_category: binCategory }) });
+                      const resp = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: signupEmail, password: pw, username, full_name: fullName, phone: normalizedPhone, location }) });
                       if (!resp.ok) {
                         const j = await resp.json().catch(()=>({error:'Signup failed'}));
                         setError(j.error || 'Signup failed'); setSubmitting(false); return;
@@ -185,15 +185,7 @@ export function AuthOverlayProvider({ children }: { children: React.ReactNode })
                   className={`space-y-5 transition-opacity duration-300 ${mode === 'signup' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}
                   autoComplete="on"
                 >
-          <div className={`text-[11px] uppercase tracking-wide ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Registering as Bin Owner</div>
-    <div className="mt-1 mb-1">
-            <label className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Bin Category</label>
-            <div className="flex gap-2 text-xs">
-        {(['private','public'] as const).map(opt => (
-    <button type="button" key={opt} onClick={()=> setBinCategory(opt)} className={`px-3 py-1.5 rounded-lg border transition ${binCategory===opt? (isDark? 'bg-white/20 border-white/40 text-white':'bg-emerald-600 border-emerald-600 text-white') : (isDark? 'bg-white/10 border-white/20 text-white/60 hover:text-white/80':'bg-white border-gray-300 text-gray-600 hover:bg-gray-50')}`}>{opt==='private'?'Private':'Public'}</button>
-              ))}
-            </div>
-          </div>
+          <div className={`text-[11px] uppercase tracking-wide ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Create Caregiver Account</div>
       <div className="grid gap-5 sm:grid-cols-2">
                     <div className="sm:col-span-1">
             <label htmlFor="ov-signup-name" className={`block text-[12px] font-medium mb-1.5 ${isDark ? 'text-white/75' : 'text-gray-600'}`}>Full Name</label>

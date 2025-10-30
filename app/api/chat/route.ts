@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   // Ensure chat_messages has needed polymorphic linkage columns (runtime safe add)
   // Supabase schema should already include chat_messages with columns: role, content, username, response, created_at
   const url = new URL(req.url);
-  const isStream = url.searchParams.get('stream') === '1';
+  const isStream = false; // Streaming disabled - use non-streaming mode only
     const body = await req.json();
   const messages = (body.messages as { role: string; content: string }[] | undefined) || [];
   // Legacy-style: rely mainly on provided conversation (front-end should send recent history)
@@ -161,7 +161,18 @@ export async function POST(req: NextRequest) {
     if (!requestedModel) {
       return new Response('AI model not configured (set GEMINI_MODEL).', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
-    const candidateModels = [requestedModel];
+    // Build a safe fallback list. Some model IDs like "gemini-1.5-flash-8b" are not available in v1beta.
+    const fallbacks = [
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-pro-latest'
+    ];
+    const candidateModels = Array.from(new Set([
+      requestedModel,
+      // If a deprecated/unsupported variant is provided, ensure supported defaults are tried too
+      ...fallbacks
+    ]));
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
       let model: any = null;
@@ -169,8 +180,10 @@ export async function POST(req: NextRequest) {
       let lastErr: any = null;
       for (const m of candidateModels) {
         try {
-          model = genAI.getGenerativeModel({ model: m });
-          // simple probe: attempt empty generation with safety; skip heavy content
+          const probe = genAI.getGenerativeModel({ model: m });
+          // Probe the model with a light call to ensure it exists and is callable for this API version
+          await probe.countTokens('ping');
+          model = probe;
           chosenModel = m;
           break;
         } catch (e:any) {
@@ -182,8 +195,8 @@ export async function POST(req: NextRequest) {
         return new Response('All Gemini model candidates failed to init: ' + (lastErr?.message || 'unknown'), { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       }
       const systemPreamble = adminId
-        ? 'You are BinLink, an admin smart-bin assistant. Respond concisely. If bins are mentioned, reference only the provided structured snapshot lines (verbatim) before analysis. Unless the user explicitly asks for other or all bins, answer ONLY about the specific bin they named. ALWAYS format any metrics with one per line using exactly these labels: Bin Lid:, Bin Fill %:, Status:, Bin Location:. If the user asks which bin is critical, prioritize highest Fill % and OPEN status; clearly label the critical bins.'
-        : 'You are BinLink, a smart-bin assistant. Respond directly without an opening greeting. Unless the user explicitly asks for other or all bins, answer ONLY about the specific bin they named. ALWAYS format metrics with one per line using exactly these labels: Bin Lid:, Bin Fill %:, Status:, Bin Location:. When the user asks for critical bins, prioritize highest Fill % and OPEN status. Provide a short ordered list from most to least urgent with reasons.';
+  ? 'You are a Palliative Care assistant. Respond concisely. Focus on patient status based on provided structured context. If multiple patients are mentioned, scope answers to those explicitly named. When listing metrics, put one per line with clear labels (e.g., SpO2:, Heart Rate:, Body Temp:, Status:, Location:).'
+  : 'You are a Palliative Care assistant. Respond directly without an opening greeting. Answer only about the patient(s) the user named. List metrics one per line with clear labels (e.g., SpO2:, Heart Rate:, Body Temp:, Status:, Location:). When the user asks which patient is critical, prioritize lowest SpO2, abnormal HR, and fall-detected flags with brief reasons.';
       const convoLines = messages.slice(-25).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`);
   const debugFlag = url.searchParams.get('debug') === '1';
   const prompt = [
@@ -295,7 +308,7 @@ export async function POST(req: NextRequest) {
         });
         return new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       } else {
-        const result = await model.generateContent(prompt);
+    const result = await model.generateContent(prompt);
   let replyText = result.response.text() || 'No reply.';
   const final = debugFlag ? `[model:${chosenModel}]\n` + replyText : replyText;
   const neat = neatFormat(final);

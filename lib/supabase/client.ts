@@ -61,22 +61,22 @@ function createUniversalClient(): SupabaseClient {
 
 // Lazy getter to avoid creating a client at module import time during builds
 export function getSupabase(): SupabaseClient {
-  const isProd = process.env.NODE_ENV === 'production';
-  if (!isProd) {
-    if (typeof window === 'undefined') {
-      const existing = (globalThis as any).__ecw_sb_client_srv__;
-      const client = existing || ((globalThis as any).__ecw_sb_client_srv__ = createUniversalClient());
-      devProbeOnce(client);
-      return client;
-    } else {
-      const existing = (globalThis as any).__ecw_sb_client_brw__;
-      const client = existing || ((globalThis as any).__ecw_sb_client_brw__ = createUniversalClient());
-      devProbeOnce(client);
-      return client;
-    }
+  // Always use singleton in both dev and production
+  if (typeof window === 'undefined') {
+    const existing = (globalThis as any).__ecw_sb_client_srv__;
+    if (existing) return existing;
+    const client = createUniversalClient();
+    (globalThis as any).__ecw_sb_client_srv__ = client;
+    devProbeOnce(client);
+    return client;
+  } else {
+    const existing = (globalThis as any).__ecw_sb_client_brw__;
+    if (existing) return existing;
+    const client = createUniversalClient();
+    (globalThis as any).__ecw_sb_client_brw__ = client;
+    devProbeOnce(client);
+    return client;
   }
-  const client = createUniversalClient();
-  return client;
 }
 
 // Development-only: run diagnostics once after first client creation

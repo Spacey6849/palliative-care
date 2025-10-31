@@ -44,11 +44,13 @@ export interface PatientData {
 interface MapComponentProps {
   patients: PatientData[];
   selectedPatient?: PatientData;
+  // Incremented only when the user explicitly selects a patient (clicks marker or chooses from search/sidebar)
+  selectionTick?: number;
   onPatientSelect: (patient: PatientData) => void;
   highlightedPatientIds?: string[];
 }
 
-export function MapComponent({ patients, selectedPatient, onPatientSelect, highlightedPatientIds = [] }: MapComponentProps) {
+export function MapComponent({ patients, selectedPatient, selectionTick = 0, onPatientSelect, highlightedPatientIds = [] }: MapComponentProps) {
   const { role } = useUser();
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -68,12 +70,14 @@ export function MapComponent({ patients, selectedPatient, onPatientSelect, highl
   }, []);
 
   useEffect(() => { setMounted(true); }, []);
-  // Auto-open popup when selection changes (e.g., via search selection)
+  // Open popup only on explicit user selections (gated by selectionTick)
   useEffect(() => {
+    if (!selectionTick) return; // ignore initial render
     if (selectedPatient && markerRefs[selectedPatient.id]) {
       try { markerRefs[selectedPatient.id]?.openPopup(); } catch {}
     }
-  }, [selectedPatient, markerRefs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionTick]);
   if (!mounted) {
     return <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Loading map...</div>;
   }
@@ -125,7 +129,7 @@ export function MapComponent({ patients, selectedPatient, onPatientSelect, highl
       style={{ background: theme === 'dark' ? '#1f2937' : '#f3f4f6' }}
     >
       <ZoomControl position="bottomright" />
-      {selectedPatient && <MapFlyTo patient={selectedPatient} />}
+  {selectedPatient && <MapFlyTo patient={selectedPatient} selectionTick={selectionTick} />}
       <PopupOffset />
       <TileLayer
         url={(function(){
@@ -220,11 +224,13 @@ export function MapComponent({ patients, selectedPatient, onPatientSelect, highl
 }
 
 // Component to animate map view when selectedPatient changes
-function MapFlyTo({ patient }: { patient: PatientData }) {
+function MapFlyTo({ patient, selectionTick }: { patient: PatientData; selectionTick: number }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo([patient.lat, patient.lng], 15, { duration: 1.2, easeLinearity: 0.25 });
-  }, [patient, map]);
+    if (!selectionTick) return; // only when user selects
+    map.flyTo([patient.lat, patient.lng], 15, { duration: 1.0, easeLinearity: 0.25 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionTick]);
   return null;
 }
 

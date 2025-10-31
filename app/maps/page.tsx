@@ -32,6 +32,8 @@ export interface PatientData {
 export default function MapsPage() {
   const [patients, setPatients] = useState<PatientData[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientData | undefined>();
+  // Incremented only on explicit user selections; used to gate map fly/popup so polling doesn't jitter the map
+  const [selectionTick, setSelectionTick] = useState(0);
   const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
   const { user, role } = useUser();
   const supabase = getSupabase();
@@ -47,6 +49,7 @@ export default function MapsPage() {
           if (!cancelled) {
             setPatients(j.patients || []);
             if (!selectedPatient && j.patients?.length > 0) {
+              // Seed initial selection without triggering map fly/popup
               setSelectedPatient(j.patients[0]);
             }
           }
@@ -85,7 +88,7 @@ export default function MapsPage() {
               // Update selected patient if it matches
               if (selectedPatient) {
                 const updated = (j.patients || []).find((p: PatientData) => p.id === selectedPatient.id);
-                if (updated) setSelectedPatient(updated);
+                if (updated) setSelectedPatient(updated); // don't bump selectionTick here
               }
             })
             .catch(() => {});
@@ -99,13 +102,20 @@ export default function MapsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, selectedPatient?.id]);
 
+  // Ensure only user-initiated selection triggers map fly/popup
+  const handlePatientSelect = (p: PatientData) => {
+    setSelectedPatient(p);
+    setSelectionTick((t) => t + 1);
+  };
+
   return (
     <div className="h-screen w-full overflow-hidden bg-gradient-to-br from-blue-50 via-white to-cyan-50 dark:from-gray-950 dark:via-gray-900 dark:to-slate-900 relative">
       <div className="absolute inset-0">
         <MapComponent
           patients={patients}
           selectedPatient={selectedPatient}
-          onPatientSelect={setSelectedPatient}
+          selectionTick={selectionTick}
+          onPatientSelect={handlePatientSelect}
           highlightedPatientIds={highlightedIds}
         />
       </div>
@@ -124,7 +134,7 @@ export default function MapsPage() {
         <Sidebar
           patients={patients}
           selectedPatient={selectedPatient}
-          onPatientSelect={setSelectedPatient}
+          onPatientSelect={handlePatientSelect}
           onSearchHighlightChange={setHighlightedIds}
         />
       </div>
